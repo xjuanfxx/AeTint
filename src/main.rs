@@ -163,6 +163,17 @@ fn round_corners(w: &slint::winit_030::winit::window::Window) {
 #[cfg(not(windows))]
 fn round_corners(_: &slint::winit_030::winit::window::Window) {}
 
+/// ¿El tema es el de After Effects tal cual (preset «AE original»)? Entonces los menús y la barra de título
+/// se dejan como los pinta Windows: la DLL no toca nada.
+fn is_native(dark: &Palette, light: &Palette) -> bool {
+    presets().into_iter().last().is_some_and(|(_, d, l)| d == *dark && l == *light)
+}
+
+/// Los menús se pintan si están activados y el tema no es el original de AE.
+fn menus_on(cfg: &Config) -> bool {
+    cfg.menus && !is_native(&cfg.palette, &cfg.light)
+}
+
 fn idle_status() -> &'static str {
     t("Pick your colours and press Apply. After Effects must be closed.", "Elige colores y pulsa Aplicar. After Effects debe estar cerrado.")
 }
@@ -467,7 +478,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let a = app.borrow();
             install::save_config(&a.cfg);
             if a.cfg.menus {
-                let _ = menus::write_colors(&a.cfg.palette, &a.cfg.light, true);
+                let _ = menus::write_colors(&a.cfg.palette, &a.cfg.light, menus_on(&a.cfg));
             }
             if let Some(ui) = weak.upgrade() {
                 refresh(&ui, &a);
@@ -562,7 +573,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let (pal, light) = (app.borrow().cfg.palette.clone(), app.borrow().cfg.light.clone());
             // el vigilante solo hace falta si alguna versión de AE no tiene el plugin AeTint.aex
             let need_watcher = on && !install::all_have_plugin(&app.borrow().targets);
-            let r = menus::write_colors(&pal, &light, on).and_then(|_| if need_watcher { menus::start_watcher() } else { Ok(()) });
+            let r = menus::write_colors(&pal, &light, on && !is_native(&pal, &light)).and_then(|_| if need_watcher { menus::start_watcher() } else { Ok(()) });
             if let Some(ui) = weak.upgrade() {
                 ui.set_menus(on);
                 match (r, menus::dll_path()) {
@@ -788,7 +799,7 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_menus(app.borrow().cfg.menus);
     ui.set_autostart(menus::autostart_enabled());
     if app.borrow().cfg.menus {
-        let _ = menus::write_colors(&app.borrow().cfg.palette, &app.borrow().cfg.light, true);
+        let _ = menus::write_colors(&app.borrow().cfg.palette, &app.borrow().cfg.light, menus_on(&app.borrow().cfg));
         if !install::all_have_plugin(&app.borrow().targets) {
             let _ = menus::start_watcher();
         }

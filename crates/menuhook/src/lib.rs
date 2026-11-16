@@ -98,6 +98,24 @@ impl Colors {
 
 /// (colores oscuros, colores claros)
 static COLORS: RwLock<Option<(Colors, Option<Colors>)>> = RwLock::new(None);
+
+/// Los colores del menú oscuro de Windows 11 (para opciones owner-draw cuando no hay tema).
+fn native_colors() -> Colors {
+    let c = |h: &str| colorref(h).unwrap_or(0);
+    Colors {
+        enabled: true,
+        bar: c("#202020"),
+        bar_hover: c("#2D2D2D"),
+        text: c("#FFFFFF"),
+        text_disabled: c("#6D6D6D"),
+        text_hover: c("#FFFFFF"),
+        popup: c("#2C2C2C"),
+        popup_hover: c("#414141"),
+        border: c("#3E3E3E"),
+        title: None,
+        title_text: None,
+    }
+}
 /// After Effects está en su brillo claro (Light)
 static LIGHT_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -261,7 +279,28 @@ unsafe fn paint_bar_line(hwnd: HWND, c: &Colors) {
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     let Some(old) = old_proc(hwnd) else { return DefWindowProcW(hwnd, msg, wp, lp) };
     let call_old = |m, w, l| CallWindowProcW(Some(std::mem::transmute::<isize, WndProcFn>(old)), hwnd, m, w, l);
-    let Some(c) = colors() else { return call_old(msg, wp, lp) };
+    let Some(c) = colors() else {
+        // pintado desactivado (o tema original de AE) con AE abierto: las opciones que ya pasamos a owner-draw
+        // se siguen dibujando, con los colores del menú oscuro de Windows, hasta reiniciar AE
+        match msg {
+            WM_MEASUREITEM => {
+                let mis = &mut *(lp as *mut MEASUREITEMSTRUCT);
+                if let Some(it) = od_item(mis.itemData).filter(|_| mis.CtlType == ODT_MENU) {
+                    od_measure(hwnd, mis, it);
+                    return 1;
+                }
+            }
+            WM_DRAWITEM => {
+                let d = &*(lp as *const DRAWITEMSTRUCT);
+                if let Some(it) = od_item(d.itemData).filter(|_| d.CtlType == ODT_MENU) {
+                    od_draw(hwnd, d, it, &native_colors());
+                    return 1;
+                }
+            }
+            _ => {}
+        }
+        return call_old(msg, wp, lp);
+    };
     match msg {
         WM_UAHDRAWMENU => {
             log("UAHDRAWMENU");

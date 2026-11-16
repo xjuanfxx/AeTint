@@ -230,8 +230,10 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
             tones.insert(t, *tone);
         }
     }
-    let slider_dark = ToneRef { base: 0.0, raised: 0.10, panel: 0.15, label: 176.0 / 255.0, heading: None, frame: None, accent: ADOBE_BLUE };
-    let slider_light = ToneRef { base: 0.85, raised: 0.90, panel: 0.95, label: 80.0 / 255.0, heading: None, frame: None, accent: ADOBE_BLUE };
+    // con un punto de marcos: los grises un poco más claros que los paneles (la zona de capas de la timeline, 0.2)
+    // caen entre paneles y marcos, como en 2025+, en vez de mezclarse con el color del texto
+    let slider_dark = ToneRef { base: 0.0, raised: 0.10, panel: 0.15, label: 176.0 / 255.0, heading: None, frame: Some(0.25), accent: ADOBE_BLUE };
+    let slider_light = ToneRef { base: 0.85, raised: 0.90, panel: 0.95, label: 80.0 / 255.0, heading: None, frame: Some(0.80), accent: ADOBE_BLUE };
 
     // Deslizador de brillo (AE 2024): cada color tiene fotogramas en varios puntos y AE mezcla los vecinos, así que
     // dos grises distintos de la mitad oscura darían un tono intermedio que no es de la paleta. Cada mitad usa el

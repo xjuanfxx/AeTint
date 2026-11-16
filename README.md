@@ -39,7 +39,8 @@
 - **Timeline overrides** for the navigator, work area, playhead, selected layer and keyframe.
 - **Live preview** of After Effects inside the app.
 - **Menus that actually match**: menu bar, dropdowns, multi-column menus like *Effect*, borders, separators, hover and the title bar.
-- **Safe by design**: originals are backed up and **Restore originals** puts them back. Nothing is written if a file doesn't look the way AeTint expects.
+- **Safe by design**: originals are backed up and **Restore** puts them back. Nothing is written if a file doesn't look the way AeTint expects.
+- **Clear feedback**: the status line says what happened; if something fails, click the message to open the full log (`aetint.log`) or press **Retry**. A short sound plays when it's done or fails (you can turn it off).
 - **English and Spanish** UI, custom title bar, no scrolling.
 
 <p align="center">
@@ -86,12 +87,12 @@ Everything ends up in `target\release`. Keep these three files together:
 ### Use
 
 1. **Close After Effects.**
-2. Open `AeTint.exe`, pick a preset (or your own colours) and check both **Dark** and **Light**.
-3. Tick the installations to theme and press **Apply theme**. The first time, Windows asks for administrator permission to write to `Program Files`.
-4. Keep **Paint File, Edit… and the title bar** on to theme the menus.
+2. Open `AeTint.exe`, pick a preset from the strip under the preview (or set your own colours in the panel on the right) and check both **Dark** and **Light**.
+3. Under **Install to**, tick the versions to theme and press **Apply theme**. The first time, Windows asks for administrator permission to write to `Program Files`.
+4. In **Settings** (the gear at the top right), keep **Paint File, Edit… and the title bar** on to theme the menus.
 5. Open After Effects.
 
-To undo everything, press **Restore originals**.
+To undo everything, press **Restore**.
 
 > **After Effects updates** replace Adobe's files with new, unthemed ones. Press **Apply theme** again after updating.
 
@@ -199,7 +200,7 @@ No. It doesn't poll: it sleeps until Windows reports that a window appeared, che
 <details>
 <summary><b>What is <code>AeTint.aex</code> in my After Effects <code>Plug-ins</code> folder?</b></summary>
 
-A tiny general plugin (AEGP) whose only job is to load `aetint_menu.dll` from AeTint's install folder when After Effects starts, so the menus are themed from the very first frame without injection or a background process. It reads the DLL's location from `%LOCALAPPDATA%\AeTint\dll_path.txt`, which AeTint updates every time it opens. **Restore originals** and the uninstaller remove it. It doesn't show up in *Manage Effects* because it isn't an effect.
+A tiny general plugin (AEGP) whose only job is to load `aetint_menu.dll` from AeTint's install folder when After Effects starts, so the menus are themed from the very first frame without injection or a background process. It reads the DLL's location from `%LOCALAPPDATA%\AeTint\dll_path.txt`, which AeTint updates every time it opens. **Restore** and the uninstaller remove it. It doesn't show up in *Manage Effects* because it isn't an effect.
 </details>
 
 <details>
@@ -216,7 +217,8 @@ After Effects lives in `C:\Program Files`, which only administrators can write t
 | `%LOCALAPPDATA%\Programs\AeTint` | The app (installer) |
 | `%LOCALAPPDATA%\AeTint\config.json` | Your palettes, language and options |
 | `%LOCALAPPDATA%\AeTint	hemes.json` | **My themes** |
-| `%LOCALAPPDATA%\AeTint\originals` | Backups of Adobe's original files — needed by **Restore originals** |
+| `%LOCALAPPDATA%\AeTint\originals` | Backups of Adobe's original files — needed by **Restore** |
+| `%LOCALAPPDATA%\AeTintetint.log` | What AeTint did each time you applied or restored, with full error messages |
 | `%LOCALAPPDATA%\AeTint\menu.json` | Menu and title bar colours read live by the DLL |
 </details>
 
@@ -235,7 +237,7 @@ The fallback watcher loads a DLL into After Effects, which some antivirus heuris
 <details>
 <summary><b>How do I undo everything?</b></summary>
 
-Press **Restore originals** in AeTint, or uninstall it from **Settings → Apps** with *Restore After Effects to its original colours* enabled. Both put Adobe's files back and remove the plugin.
+Press **Restore** in AeTint, or uninstall it from **Settings → Apps** with *Restore After Effects to its original colours* enabled. Both put Adobe's files back and remove the plugin.
 </details>
 
 ## Known limitations

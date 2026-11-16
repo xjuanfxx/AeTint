@@ -826,10 +826,22 @@ unsafe fn hook_all_threads() {
     CloseHandle(snap);
 }
 
+/// Ventana de menú recién creada (aún sin mostrar): se engancha ya, para que su marco y la animación de
+/// apertura salgan con nuestros colores desde el primer fotograma. Las ventanas de menú las crea el núcleo
+/// de Windows y su WM_CREATE no pasa por los hooks de mensajes; este aviso sí llega.
+unsafe extern "system" fn on_object_create(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND, id_object: i32, _: i32, _: u32, _: u32) {
+    if id_object != 0 || hwnd.is_null() || colors().is_none() {
+        return; // solo ventanas (OBJID_WINDOW)
+    }
+    hook_popup_window(hwnd);
+}
+
 unsafe fn install_popup_hook() {
     let module = MODULE.load(std::sync::atomic::Ordering::Relaxed) as HINSTANCE;
-    let h = SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, module, Some(on_popup_start), GetCurrentProcessId(), 0, WINEVENT_INCONTEXT);
-    log(&format!("win event hook {:?}", h));
+    let pid = GetCurrentProcessId();
+    let h = SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, module, Some(on_popup_start), pid, 0, WINEVENT_INCONTEXT);
+    let h2 = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE, module, Some(on_object_create), pid, 0, WINEVENT_INCONTEXT);
+    log(&format!("win event hooks {:?} {:?}", h, h2));
 }
 
 // ── menús desplegables (tema "Menu")

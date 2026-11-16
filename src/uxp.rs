@@ -21,7 +21,14 @@ pub const HOME_FILES: &[&str] = &[
     "UXP/plugins/com.adobe.ccx.start/js/67.bundle.js",
     // AE 2024: el CSS de Spectrum va incrustado aquí
     "UXP/plugins/com.adobe.ccx.start/js/4.js",
+    // solo en la copia compartida de Common Files (10.x), que carga AE 2024: ver `install::shared_home`
+    "UXP/plugins/com.adobe.ccx.start/js/100.bundle.js",
+    "UXP/plugins/com.adobe.ccx.start/js/101.bundle.js",
+    "UXP/plugins/com.adobe.ccx.start/js/desktop.js",
+    "UXP/plugins/com.adobe.ccx.start/js/6.js",
 ];
+/// Cuántos de `HOME_FILES` se usan en la copia que trae cada AE (el resto, solo en la compartida).
+pub const HOME_BUNDLED: usize = 7;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Theme {

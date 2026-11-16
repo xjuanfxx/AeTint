@@ -19,12 +19,63 @@ pub struct Target {
     pub id: String,
     pub label: String,
     pub support: PathBuf,
+    /// La pantalla de inicio que carga de verdad esta versión, si es la copia compartida de Common Files
+    /// (AE 2024: la suya es más antigua que la compartida, y UXP carga la más nueva).
+    pub shared_home: Option<PathBuf>,
 }
 
 impl Target {
     pub fn file(&self, f: FileKind) -> PathBuf {
+        if let (FileKind::Home(_), Some(h)) = (f, &self.shared_home) {
+            return h.join(f.name().trim_start_matches(crate::uxp::HOME_DIR).trim_start_matches('/'));
+        }
         self.support.join(f.name())
     }
+
+    /// Los archivos que AeTint toca en esta versión.
+    pub fn files(&self) -> Vec<FileKind> {
+        FileKind::all()
+            .into_iter()
+            .filter(|f| match f {
+                FileKind::Home(i) => self.shared_home.is_some() || (*i as usize) < crate::uxp::HOME_BUNDLED,
+                _ => true,
+            })
+            .collect()
+    }
+}
+
+/// "10.16.4" / "99.10.0.75" → números comparables.
+fn ver(s: &str) -> Vec<u32> {
+    s.split('.').map(|x| x.trim().parse().unwrap_or(0)).collect()
+}
+
+fn manifest_info(dir: &Path) -> Option<(Vec<u32>, Option<Vec<u32>>)> {
+    let m: serde_json::Value = serde_json::from_slice(&fs::read(dir.join("manifest.json")).ok()?).ok()?;
+    let v = ver(m["version"].as_str()?);
+    let ae_min = m["host"].as_array().and_then(|h| h.iter().find(|x| x["app"] == "aftereffects")).and_then(|x| x["minVersion"].as_str()).map(ver);
+    Some((v, ae_min))
+}
+
+/// Si esta versión de AE carga la pantalla de inicio compartida de Common Files en vez de la suya:
+/// la compartida tiene que admitir AE (minVersion ≤ la versión de AE) y ser más nueva que la propia.
+fn shared_home(support: &Path, ae_major: Option<u32>) -> Option<PathBuf> {
+    let (own, _) = manifest_info(&support.join(crate::uxp::HOME_DIR))?;
+    let major = ae_major?;
+    let root = PathBuf::from(std::env::var_os("CommonProgramW6432").or_else(|| std::env::var_os("CommonProgramFiles"))?).join("Adobe").join("UXP").join("extensions");
+    let mut best: Option<(Vec<u32>, PathBuf)> = None;
+    for e in fs::read_dir(root).ok()?.flatten() {
+        if !e.file_name().to_string_lossy().starts_with("com.adobe.ccx.start-") {
+            continue;
+        }
+        let Some((v, Some(min))) = manifest_info(&e.path()) else { continue };
+        if min.first().copied().unwrap_or(u32::MAX) > major || v <= own {
+            continue;
+        }
+        if best.as_ref().map_or(true, |b| v > b.0) {
+            best = Some((v, e.path()));
+        }
+    }
+    best.map(|b| b.1)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,10 +262,25 @@ pub fn find_targets() -> Vec<Target> {
             if out.iter().any(|t| t.id == id) {
                 continue;
             }
-            out.push(Target { id, label: name.trim_start_matches("Adobe ").to_string(), support });
+            // "Adobe After Effects 2024" → 24
+            let major = name.rsplit(' ').next().and_then(|y| y.parse::<u32>().ok()).filter(|y| *y >= 2000).map(|y| y - 2000);
+            let shared_home = shared_home(&support, major);
+            out.push(Target { id, label: name.trim_start_matches("Adobe ").to_string(), support, shared_home });
         }
     }
     out.sort_by(|a, b| a.label.cmp(&b.label));
+    // una copia compartida la tematiza solo una versión (la primera), para no guardar como original un archivo
+    // que ya tiene el tema de otra
+    let mut seen = Vec::new();
+    for t in &mut out {
+        if let Some(h) = &t.shared_home {
+            if seen.contains(h) {
+                t.shared_home = None;
+            } else {
+                seen.push(h.clone());
+            }
+        }
+    }
     out
 }
 
@@ -239,12 +305,21 @@ fn loader_bytes() -> Option<Vec<u8>> {
     fs::read(std::env::current_exe().ok()?.with_file_name("aetint_loader.dll")).ok()
 }
 
+/// Los archivos de la pantalla de inicio compartida van aparte ("<id>/shared/…"): su original no es el de la
+/// copia propia de esa versión.
+fn rel(t: &Target, f: FileKind) -> String {
+    match (f, &t.shared_home) {
+        (FileKind::Home(_), Some(_)) => format!("shared/{}", f.name()),
+        _ => f.name().to_string(),
+    }
+}
+
 fn backup_path(t: &Target, f: FileKind) -> PathBuf {
-    data_dir().join("originals").join(&t.id).join(f.name())
+    data_dir().join("originals").join(&t.id).join(rel(t, f))
 }
 
 fn key(t: &Target, f: FileKind) -> String {
-    format!("{}/{}", t.id, f.name())
+    format!("{}/{}", t.id, rel(t, f))
 }
 
 /// ¿Este contenido sirve como original?
@@ -419,7 +494,7 @@ pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u
     let darkest = tones.iter().find(|x| x.0 == "darkest").map(|x| x.1);
     let dark = tones.iter().find(|x| x.0 == "dark").map(|x| x.1).or(darkest);
     if let (Some(td), Some(tk)) = (darkest, dark) {
-        for f in FileKind::all().into_iter().filter(|f| matches!(f, FileKind::Home(_))) {
+        for f in t.files().into_iter().filter(|f| matches!(f, FileKind::Home(_))) {
             let path = t.file(f);
             if !path.is_file() {
                 continue;
@@ -461,7 +536,7 @@ pub fn apply(targets: &[Target], cfg: &Config) -> Result<String, String> {
     }
     write_all(&plan)?;
     for t in targets {
-        for f in FileKind::all() {
+        for f in t.files() {
             if let Ok(b) = fs::read(t.file(f)) {
                 st.written.insert(key(t, f), sha(&b));
             }

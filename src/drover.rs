@@ -7,7 +7,7 @@
 //! entidades del DTD del propio archivo. Los grises (s ≈ 0) pasan a la paleta y los azules al acento; el texto
 //! se compacta (espacios) para que el recurso conserve su tamaño.
 
-use crate::color::{self, Rgb};
+use crate::color::Rgb;
 use crate::dvaui::{is_accent, keep_grey};
 use crate::remap::{shift_accent, GreyMap, Pal, ToneRef};
 use std::collections::HashMap;
@@ -81,11 +81,9 @@ fn accent_like(n: &str) -> bool {
 
 /// Otro color con nombre propio (familias de Spectrum, curvas del graph editor…): nunca es el acento.
 fn own_colour(n: &str) -> bool {
-    const F: &[&str] = &[
-        "celery", "chartreuse", "yellow", "magenta", "fuchsia", "purple", "indigo", "seafoam", "cyan", "red", "orange", "green", "negative",
-        "positive", "notice", "graph", "label", "vary",
-    ];
-    F.iter().any(|f| n.contains(f))
+    // familias: palabra completa ("colored" no es "red")
+    const F: &[&str] = &["celery", "chartreuse", "yellow", "magenta", "fuchsia", "purple", "indigo", "seafoam", "cyan", "red", "orange", "green", "negative", "positive", "notice"];
+    n.split('-').any(|w| F.contains(&w)) || ["graph", "vary"].iter().any(|f| n.contains(f))
 }
 
 /// En estos temas el único azul es el acento de Adobe (selección, enlaces, botones principales…).

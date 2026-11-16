@@ -220,7 +220,7 @@ pub fn load_config() -> Config {
 pub fn save_config(c: &Config) {
     save("config.json", c)
 }
-fn load_state() -> State {
+pub fn load_state() -> State {
     load("state.json")
 }
 fn save_state(s: &State) {
@@ -323,6 +323,22 @@ fn key(t: &Target, f: FileKind) -> String {
 }
 
 /// ¿Este contenido sirve como original?
+/// ¿Mismo tamaño y misma sección de código? AeTint solo cambia datos (.rdata / .rsrc), nunca el código.
+fn same_code(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let (Ok(pa), Ok(pb)) = (crate::pe::Pe::parse(a), crate::pe::Pe::parse(b)) else { return false };
+    match (pa.sec(".text"), pb.sec(".text")) {
+        (Some(x), Some(y)) => {
+            let (xa, xb) = (x.raw as usize, (x.raw + x.raw_size) as usize);
+            let (ya, yb) = (y.raw as usize, (y.raw + y.raw_size) as usize);
+            xb <= a.len() && yb <= b.len() && a[xa..xb] == b[ya..yb]
+        }
+        _ => false,
+    }
+}
+
 fn is_pristine(f: FileKind, b: &[u8]) -> bool {
     match f {
         FileKind::Dvaui => Dvaui::open(b).is_ok(),
@@ -350,6 +366,15 @@ pub fn original(t: &Target, f: FileKind, st: &State) -> Result<Vec<u8>, String> 
     if let FileKind::Home(_) = f {
         if let Ok(b) = fs::read(&bk) {
             if crate::uxp::same_but_colors(&cur, &b) {
+                return Ok(b);
+            }
+        }
+    }
+    // DLL: si la copia guardada tiene el mismo código que lo instalado, es el mismo build con otros colores
+    // (un tema, aunque sus grises parezcan los de Adobe): se conserva la copia. Una actualización cambia el código.
+    if matches!(f, FileKind::Dvaui | FileKind::AeLib) {
+        if let Ok(b) = fs::read(&bk) {
+            if same_code(&cur, &b) {
                 return Ok(b);
             }
         }

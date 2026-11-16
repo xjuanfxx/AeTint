@@ -430,7 +430,8 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(i) = args.iter().position(|a| a == "--dry-run") {
         let out = std::path::PathBuf::from(args.get(i + 1).cloned().unwrap_or_else(|| "dry-run".into()));
         let cfg = install::load_config();
-        let st = install::State::default();
+        // con el estado real: así reconoce lo que ya tiene tema y no toma un tema por original
+        let st = install::load_state();
         for t in install::find_targets() {
             match install::build(&t, &cfg, &st) {
                 Ok(files) => {

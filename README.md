@@ -170,6 +170,68 @@ target\release\menutest.exe --open --menu 4 --dll target\release\aetint_menu.dll
 
 Create `%LOCALAPPDATA%\AeTint\debug.flag` to make the DLL log to `%LOCALAPPDATA%\AeTint\menu.log`; the plugin logs to `loader.log`.
 
+## FAQ
+
+<details>
+<summary><b>Why is there an AeTint icon in the system tray / an <code>AeTint.exe</code> in Task Manager?</b></summary>
+
+That's the **menu watcher** (`AeTint.exe --watch`). It only exists as a fallback:
+
+- Normally the menus and title bar are painted by the **`AeTint.aex` plugin**, which After Effects loads by itself at startup. Nothing runs in the background in that case.
+- If an installed After Effects version **doesn't have the plugin** (a version you haven't applied a theme to yet, or a newly installed one), AeTint starts the watcher so that version's menus still get painted.
+- The tray icon is there so it's clear what that process is. Double-click it to open AeTint; right-click → **Stop** to close it (it comes back the next time AeTint opens if it's still needed).
+
+To make it go away for good, select every After Effects version in AeTint and press **Apply theme** once: with the plugin installed everywhere, the watcher isn't started any more.
+</details>
+
+<details>
+<summary><b>Does the watcher slow my PC down?</b></summary>
+
+No. It doesn't poll: it sleeps until Windows reports that a window appeared, checks in microseconds whether it belongs to After Effects, and goes back to sleep. Measured over 25 minutes it used **0.22 s of CPU in total** and ~13 MB of RAM. Windows delivers those notifications asynchronously, so it can't hold up other programs.
+</details>
+
+<details>
+<summary><b>What is <code>AeTint.aex</code> in my After Effects <code>Plug-ins</code> folder?</b></summary>
+
+A tiny general plugin (AEGP) whose only job is to load `aetint_menu.dll` from AeTint's install folder when After Effects starts, so the menus are themed from the very first frame without injection or a background process. It reads the DLL's location from `%LOCALAPPDATA%\AeTint\dll_path.txt`, which AeTint updates every time it opens. **Restore originals** and the uninstaller remove it. It doesn't show up in *Manage Effects* because it isn't an effect.
+</details>
+
+<details>
+<summary><b>Why does it ask for administrator permission?</b></summary>
+
+After Effects lives in `C:\Program Files`, which only administrators can write to. The first **Apply theme** asks once, writes the themed files and gives your user permission to update **those specific files** later, so it doesn't ask again. Installing AeTint itself never needs admin: it goes to `%LOCALAPPDATA%\Programs\AeTint`.
+</details>
+
+<details>
+<summary><b>Where does AeTint keep my data?</b></summary>
+
+| Path | What |
+|---|---|
+| `%LOCALAPPDATA%\Programs\AeTint` | The app (installer) |
+| `%LOCALAPPDATA%\AeTint\config.json` | Your palettes, language and options |
+| `%LOCALAPPDATA%\AeTint	hemes.json` | **My themes** |
+| `%LOCALAPPDATA%\AeTint\originals` | Backups of Adobe's original files — needed by **Restore originals** |
+| `%LOCALAPPDATA%\AeTint\menu.json` | Menu and title bar colours read live by the DLL |
+</details>
+
+<details>
+<summary><b>After Effects updated and the theme is gone</b></summary>
+
+Updates replace Adobe's files with new, unthemed ones. Open AeTint and press **Apply theme** again; it detects the new files as originals and backs them up first.
+</details>
+
+<details>
+<summary><b>My antivirus flagged AeTint</b></summary>
+
+The fallback watcher loads a DLL into After Effects, which some antivirus heuristics dislike. The plugin path (`AeTint.aex`) avoids that. All of AeTint is open source and built by GitHub Actions from this repository.
+</details>
+
+<details>
+<summary><b>How do I undo everything?</b></summary>
+
+Press **Restore originals** in AeTint, or uninstall it from **Settings → Apps** with *Restore After Effects to its original colours* enabled. Both put Adobe's files back and remove the plugin.
+</details>
+
 ## Known limitations
 
 - On Windows 11, the light menu outline can take a moment to pick up the theme colour.

@@ -288,7 +288,7 @@ fn refresh(ui: &AppWindow, app: &App) {
         .iter()
         .map(|t| TargetItem {
             id: t.id.clone().into(),
-            label: t.label.clone().into(),
+            label: t.label.replacen("After Effects", "AE", 1).into(),
             status: app.status.get(&t.id).cloned().unwrap_or_else(|| i18n::t("Checking…", "Comprobando…").into()).into(),
             selected: app.cfg.selected.contains(&t.id),
         })

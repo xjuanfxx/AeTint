@@ -1215,7 +1215,10 @@ export component AppWindow inherits Window {
                         }
                         for t in root.targets: Rectangle {
                             height: 44px;
-                            min-width: 180px;
+                            // con varias versiones las tarjetas se encogen (el texto se recorta) en vez de empujar la ventana
+                            min-width: 112px;
+                            preferred-width: 180px;
+                            horizontal-stretch: 0;
                             border-radius: 11px;
                             background: t.selected ? Ui.p.raised : (tta.has-hover ? Ui.p.raised.with-alpha(0.5) : transparent);
                             border-width: 1px;
@@ -1227,7 +1230,9 @@ export component AppWindow inherits Window {
                                 VerticalLayout { alignment: center; Check { checked: t.selected; } }
                                 VerticalLayout {
                                     alignment: center;
-                                    Text { text: t.label; color: Ui.p.text; font-size: 12px; font-weight: 700; }
+                                    min-width: 0;
+                                    horizontal-stretch: 1;
+                                    Text { text: t.label; color: Ui.p.text; font-size: 12px; font-weight: 700; overflow: elide; }
                                     Text { text: t.status; color: Ui.p.muted; font-size: 10.5px; overflow: elide; }
                                 }
                             }

@@ -853,6 +853,7 @@ export component AppWindow inherits Window {
     callback export-theme(int);
     // pantalla de inicio propia ("" = la de Adobe)
     in property <string> splash-name;
+    in property <image> splash-thumb;
     callback choose-splash();
     callback clear-splash();
     callback start-drag();
@@ -999,51 +1000,6 @@ export component AppWindow inherits Window {
                                     on: root.sounds;
                                     toggled => { root.toggle-sounds(!root.sounds); }
                                 }
-                                // pantalla de inicio de AE con una imagen propia
-                                Rectangle {
-                                    height: 34px;
-                                    HorizontalLayout {
-                                        padding-left: 10px;
-                                        padding-right: 6px;
-                                        spacing: 6px;
-                                        VerticalLayout {
-                                            alignment: center;
-                                            horizontal-stretch: 1;
-                                            Text { text: Ui.t("Splash screen", "Pantalla de inicio"); color: Ui.p.text; font-size: 12px; }
-                                            Text { text: root.splash-name == "" ? Ui.t("Adobe's", "La de Adobe") : root.splash-name; color: Ui.p.muted; font-size: 10.5px; }
-                                        }
-                                        if root.splash-name != "": VerticalLayout {
-                                            alignment: center;
-                                            Rectangle {
-                                                width: 24px;
-                                                height: 24px;
-                                                border-radius: 6px;
-                                                background: cs-ta.has-hover ? Ui.p.raised : transparent;
-                                                Text { text: "×"; color: Ui.p.muted; font-size: 15px; }
-                                                cs-ta := TouchArea {
-                                                    mouse-cursor: pointer;
-                                                    clicked => { root.clear-splash(); }
-                                                }
-                                            }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            Rectangle {
-                                                height: 26px;
-                                                width: sp-lbl.preferred-width + 20px;
-                                                border-radius: 7px;
-                                                background: sp-ta.has-hover ? Ui.p.raised : Ui.p.base;
-                                                border-width: 1px;
-                                                border-color: Ui.p.frame;
-                                                sp-lbl := Text { text: Ui.t("CHOOSE…", "ELEGIR…"); color: Ui.p.text; font-family: "Archivo Expanded"; font-size: 9.5px; font-weight: 800; letter-spacing: 0.8px; }
-                                                sp-ta := TouchArea {
-                                                    mouse-cursor: pointer;
-                                                    clicked => { root.choose-splash(); }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                                 Rectangle {
                                     height: 34px;
                                     HorizontalLayout {
@@ -1147,6 +1103,70 @@ export component AppWindow inherits Window {
                             ita := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => { root.import-theme(); }
+                            }
+                        }
+                    }
+                    // pantalla de inicio propia: a la derecha, siempre a mano
+                    Rectangle {
+                        width: sp-row.preferred-width + 20px;
+                        border-radius: 7px;
+                        background: sp-ta.has-hover ? Ui.p.raised : transparent;
+                        border-width: 1px;
+                        border-color: root.splash-name != "" ? Ui.p.accent.with-alpha(0.6) : Ui.p.frame;
+                        sp-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.choose-splash(); }
+                        }
+                        sp-row := HorizontalLayout {
+                            x: 10px;
+                            spacing: 7px;
+                            alignment: start;
+                            if root.splash-name != "": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 26px;
+                                    height: 16px;
+                                    border-radius: 3px;
+                                    clip: true;
+                                    Image { width: 26px; height: 16px; source: root.splash-thumb; image-fit: cover; }
+                                }
+                            }
+                            if root.splash-name == "": VerticalLayout {
+                                alignment: center;
+                                // icono de imagen
+                                Path {
+                                    width: 13px;
+                                    height: 11px;
+                                    viewbox-width: 13;
+                                    viewbox-height: 11;
+                                    stroke: Ui.p.muted;
+                                    stroke-width: 1.2px;
+                                    fill: transparent;
+                                    commands: "M 1 1 L 12 1 L 12 10 L 1 10 Z M 1.5 8.5 L 5 5 L 7.5 7.5 L 9 6 L 11.5 8.5";
+                                }
+                            }
+                            Text {
+                                text: Ui.t("SPLASH", "INICIO") + " · " + (root.splash-name == "" ? Ui.t("ADOBE'S", "ADOBE") : Ui.t("YOURS", "TUYO"));
+                                color: root.splash-name == "" ? Ui.p.muted : Ui.p.text;
+                                font-family: "Archivo Expanded";
+                                font-size: 9.5px;
+                                font-weight: 800;
+                                letter-spacing: 0.8px;
+                                vertical-alignment: center;
+                            }
+                            if root.splash-name != "": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 5px;
+                                    background: cs-ta.has-hover ? Ui.p.frame : transparent;
+                                    Text { text: "×"; color: Ui.p.muted; font-size: 14px; }
+                                    cs-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.clear-splash(); }
+                                    }
+                                }
                             }
                         }
                     }

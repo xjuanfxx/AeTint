@@ -259,6 +259,15 @@ fn register_theme_files() {
     });
 }
 
+/// Miniatura de la imagen del splash para el botón.
+fn splash_thumb(cfg: &Config) -> slint::Image {
+    let Some(p) = cfg.splash.as_deref() else { return slint::Image::default() };
+    let Ok(img) = splash::load(std::path::Path::new(p)) else { return slint::Image::default() };
+    let t = img.thumbnail(104, 64).to_rgba8();
+    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(t.as_raw(), t.width(), t.height());
+    slint::Image::from_rgba8(buf)
+}
+
 fn splash_label(cfg: &Config) -> String {
     cfg.splash.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(|_| i18n::t("Your image", "Tu imagen").to_string()).unwrap_or_default()
 }
@@ -990,6 +999,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     a.cfg.splash = Some(stored);
                     install::save_config(&a.cfg);
                     ui.set_splash_name(splash_label(&a.cfg).into());
+                    ui.set_splash_thumb(splash_thumb(&a.cfg));
                     ui.set_status(t("Splash image set. Press Apply theme to put it in After Effects.", "Imagen de inicio elegida. Pulsa Aplicar tema para ponerla en After Effects.").into());
                     ui.set_status_error(false);
                     ui.set_status_ok(true);
@@ -1031,6 +1041,7 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_menus(app.borrow().cfg.menus);
     ui.set_autostart(menus::autostart_enabled());
     ui.set_splash_name(splash_label(&app.borrow().cfg).into());
+    ui.set_splash_thumb(splash_thumb(&app.borrow().cfg));
     register_theme_files();
     // doble clic en un .aetint: AeTint se abre con ese archivo
     if let Some(p) = std::env::args().skip(1).find(|a| a.to_lowercase().ends_with(".aetint")) {

@@ -13,7 +13,7 @@ path = "src/main.rs"
 slint = { version = "1.16", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-2", "unstable-winit-030"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_System_Diagnostics_ToolHelp"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_System_Diagnostics_ToolHelp"] }
 
 [build-dependencies]
 slint-build = "1.16"

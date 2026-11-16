@@ -824,5 +824,36 @@ fn main() -> Result<(), slint::PlatformError> {
         });
         std::mem::forget(timer);
     }
-    ui.run()
+    // se muestra, se centra en su monitor y arranca el bucle
+    center_window(ui.window(), 1180.0, 760.0);
+    ui.show()?;
+    slint::run_event_loop()
+}
+
+
+/// Centra la ventana en el monitor donde está el ratón (las ventanas sin marco aparecen arriba a la izquierda).
+/// Se llama antes de mostrarla, con su tamaño lógico.
+fn center_window(w: &slint::Window, width: f32, height: f32) {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+        use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut pt = POINT { x: 0, y: 0 };
+        GetCursorPos(&mut pt);
+        let mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        let mut mi: MONITORINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(mon, &mut mi) == 0 {
+            return;
+        }
+        let (mut dx, mut dy) = (96u32, 96u32);
+        GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
+        let scale = dx as f32 / 96.0;
+        let r = mi.rcWork;
+        let x = r.left + ((r.right - r.left) - (width * scale) as i32) / 2;
+        let y = r.top + ((r.bottom - r.top) - (height * scale) as i32) / 2;
+        w.set_position(slint::PhysicalPosition::new(x.max(r.left), y.max(r.top)));
+    }
 }

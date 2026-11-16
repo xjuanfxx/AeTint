@@ -9,6 +9,7 @@ mod i18n;
 mod aelib;
 mod color;
 mod dvaui;
+mod drover;
 mod install;
 mod jsonfit;
 mod menus;

@@ -18,6 +18,8 @@ pub const PREFIX: &str = "ae-color-";
 pub struct AeLib {
     res: Resource,
     pub version: String,
+    /// AE 2024 y anteriores (interfaz antigua): temas XML con los colores reales de la interfaz.
+    pub xml: Vec<Resource>,
 }
 
 /// Grupos de claves que la interfaz deja cambiar a mano (además de seguir la paleta).
@@ -34,7 +36,12 @@ impl AeLib {
         let p = Pe::parse(b)?;
         let res = p.resources(b);
         let r = res.iter().find(|r| r.is("JSON", RES_NAME)).cloned().ok_or("AfterFXLib.dll no tiene la tabla de colores de AE")?;
-        Ok(AeLib { res: r, version: pe::file_version(b, &res) })
+        let xml = if res.iter().any(|x| x.is("XML", crate::drover::MARKER)) {
+            crate::drover::RESOURCES.iter().filter_map(|n| res.iter().find(|x| x.is("XML", n)).cloned()).collect()
+        } else {
+            Vec::new()
+        };
+        Ok(AeLib { res: r, version: pe::file_version(b, &res), xml })
     }
 
     pub fn json(&self, b: &[u8]) -> Result<Value, String> {
@@ -79,6 +86,17 @@ impl AeLib {
             Ok(())
         })?;
         b[r.off..r.off + r.size].copy_from_slice(&new);
+        // interfaz antigua (2024 y anteriores): los temas XML
+        if !self.xml.is_empty() {
+            let dark = blocks.iter().find(|x| x.0 != "light").map(|x| x.2);
+            let light = blocks.iter().find(|x| x.0 == "light").map(|x| x.2);
+            if let Some(dark) = dark {
+                for x in &self.xml {
+                    let new = crate::drover::recolor(&orig[x.off..x.off + x.size], dark, light)?;
+                    b[x.off..x.off + x.size].copy_from_slice(&new);
+                }
+            }
+        }
         pe::fix_checksum(&mut b);
         Ok(b)
     }

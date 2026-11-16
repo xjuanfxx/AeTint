@@ -434,7 +434,7 @@ impl Dvaui {
     }
 }
 
-fn is_accent(n: &str) -> bool {
+pub fn is_accent(n: &str) -> bool {
     const P: &[&str] = &[
         "accent-",
         "informative-",
@@ -451,7 +451,7 @@ fn is_accent(n: &str) -> bool {
     P.iter().any(|p| n.starts_with(p))
 }
 
-fn keep_grey(n: &str) -> bool {
+pub fn keep_grey(n: &str) -> bool {
     n == "black" || n == "white" || n.starts_with("static-") || n.starts_with("transparent") || n.starts_with("drop-shadow") || n.ends_with("-shadow") || n.contains("-shadow-")
 }
 

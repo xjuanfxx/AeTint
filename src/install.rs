@@ -370,7 +370,7 @@ pub fn probe(dir: &Path, cfg: &Config) {
                         Err(e) => println!("  AfterFXLib.dll: {e}"),
                         Ok(l) => {
                             let blocks = l.json(&a).map(|v| v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default());
-                            println!("  AfterFXLib.dll {}: blocks {:?}, original {}", l.version, blocks, l.looks_original(&a));
+                            println!("  AfterFXLib.dll {}: blocks {:?}, original {}, xml {}", l.version, blocks, l.looks_original(&a), l.xml.len());
                             let mut bl = Vec::new();
                             for (name, k) in [("darkest", Kind::Darkest), ("dark", Kind::Dark)] {
                                 if let Some(t) = d.tone_for(&b, k) {

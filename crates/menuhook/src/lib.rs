@@ -809,23 +809,23 @@ unsafe fn hook_popup_window(hwnd: HWND) -> bool {
 
 const MN_GETHMENU_: u32 = 0x01E1;
 
-/// Fondo del menú de esta ventana con nuestro color. Con un pincel propio, Windows lo usa en vez del gris de su
-/// tema: así también los submenús (que dibujan su fondo por un camino que los enganches del tema no ven).
+/// Un menú con pincel de fondo propio (AE se lo pone a algunos submenús) no usa el tema de Windows: sale con el
+/// gris oscuro del sistema y los enganches del tema no lo ven. Se le quita, y vuelve a dibujarse con el tema
+/// (que lleva nuestros colores). Los menús con columnas son la excepción: su fondo es nuestro a propósito.
 unsafe fn menu_background(hwnd: HWND, c: &Colors) {
     let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
-    if m.is_null() || IsMenu(m) == 0 {
+    if m.is_null() || IsMenu(m) == 0 || is_od_menu(m) {
         return;
     }
     let mut mi: MENUINFO = std::mem::zeroed();
     mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
     mi.fMask = MIM_BACKGROUND;
     GetMenuInfo(m, &mut mi);
-    let br = popup_brush(c.popup);
-    if mi.hbrBack != br {
+    if !mi.hbrBack.is_null() {
         mi.fMask = MIM_BACKGROUND;
-        mi.hbrBack = br;
+        mi.hbrBack = std::ptr::null_mut();
         SetMenuInfo(m, &mi);
-        log(&format!("fondo del menú {:#x}", m as isize));
+        log(&format!("menú {:#x}: sin el fondo propio de AE ({:#x})", m as isize, c.popup));
     }
 }
 
@@ -845,8 +845,8 @@ unsafe extern "system" fn on_popup_start(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND,
         let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
         let before = if m.is_null() { 0 } else { let mut mi: MENUINFO = std::mem::zeroed(); mi.cbSize = std::mem::size_of::<MENUINFO>() as u32; mi.fMask = MIM_BACKGROUND; GetMenuInfo(m, &mut mi); mi.hbrBack as isize };
         menu_background(hwnd, &c);
-        if before != popup_brush(c.popup) as isize {
-            RedrawWindow(hwnd, std::ptr::null(), std::ptr::null_mut(), RDW_INVALIDATE | RDW_ERASE);
+        if before != 0 && !is_od_menu(m) {
+            RedrawWindow(hwnd, std::ptr::null(), std::ptr::null_mut(), RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
         }
     }
 }

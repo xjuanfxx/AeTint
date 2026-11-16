@@ -1,0 +1,375 @@
+//! Menús y barra de título de After Effects: colores para aetint_menu.dll, carga de la DLL en AfterFX.exe
+//! (sin tocar archivos de Adobe) y el vigilante que lo hace cada vez que se abre After Effects.
+
+use crate::color;
+use crate::install::data_dir;
+use crate::remap::Palette;
+use serde::Serialize;
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+pub const DLL_NAME: &str = "aetint_menu.dll";
+const TARGET_EXE: &str = "afterfx.exe";
+
+/// Un juego de colores de menú (oscuro o claro).
+#[derive(Serialize)]
+struct MenuSet {
+    bar: String,
+    bar_hover: String,
+    text: String,
+    text_hover: String,
+    text_disabled: String,
+    popup: String,
+    popup_hover: String,
+    border: String,
+    title: String,
+    title_text: String,
+}
+
+/// menu.json: el juego oscuro va en la raíz (como siempre) y el claro en "light".
+#[derive(Serialize)]
+struct MenuColors {
+    enabled: bool,
+    #[serde(flatten)]
+    dark: MenuSet,
+    light: MenuSet,
+}
+
+fn menu_set(p: &Palette) -> Result<MenuSet, String> {
+    let pal = p.resolve()?;
+    let h = color::to_hex;
+    Ok(MenuSet {
+        bar: h(pal.base),
+        bar_hover: h(pal.frame),
+        text: h(pal.text),
+        text_hover: h(color::mix(pal.text, [1.0; 3], 0.35)),
+        text_disabled: h(color::mix(pal.text, pal.panel, 0.55)),
+        popup: h(pal.panel),
+        popup_hover: h(color::mix(pal.frame, pal.accent, 0.25)),
+        border: h(pal.frame),
+        title: h(pal.base),
+        title_text: h(pal.text),
+    })
+}
+
+/// Escribe %LOCALAPPDATA%\AeTint\menu.json con los colores de los brillos oscuros y del claro.
+/// La DLL lo relee sola (AE cambia de color en vivo) y elige el juego según el brillo de AE.
+pub fn write_colors(dark: &Palette, light: &Palette, enabled: bool) -> Result<(), String> {
+    let m = MenuColors { enabled, dark: menu_set(dark)?, light: menu_set(light)? };
+    std::fs::create_dir_all(data_dir()).map_err(|e| e.to_string())?;
+    std::fs::write(data_dir().join("menu.json"), serde_json::to_vec_pretty(&m).unwrap()).map_err(|e| e.to_string())
+}
+
+/// La DLL que viene junto a AeTint.exe.
+fn bundled_dll() -> Option<PathBuf> {
+    let p = std::env::current_exe().ok()?.with_file_name(DLL_NAME);
+    p.is_file().then_some(p)
+}
+
+/// Deja anotada la ruta de la DLL (junto a AeTint.exe) en %LOCALAPPDATA%\AeTint\dll_path.txt: de ahí la lee
+/// el plugin AeTint.aex. La DLL se carga desde la carpeta de AeTint porque desde AppData After Effects no la
+/// deja cargar.
+pub fn deploy_dll() {
+    let Some(src) = bundled_dll() else { return };
+    let _ = std::fs::create_dir_all(data_dir());
+    let f = data_dir().join("dll_path.txt");
+    let s = src.display().to_string();
+    if std::fs::read_to_string(&f).map(|x| x.trim() != s).unwrap_or(true) {
+        let _ = std::fs::write(&f, s);
+    }
+    // la copia antigua en AppData ya no se usa
+    let _ = std::fs::remove_file(data_dir().join(DLL_NAME));
+}
+
+pub fn dll_path() -> Option<PathBuf> {
+    deploy_dll();
+    bundled_dll()
+}
+
+#[cfg(windows)]
+mod win {
+    use super::*;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+    use windows_sys::Win32::System::Memory::{VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE};
+    use windows_sys::Win32::System::Threading::*;
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
+    }
+
+    fn name(buf: &[u16]) -> String {
+        let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        String::from_utf16_lossy(&buf[..n])
+    }
+
+    pub fn ae_pids() -> Vec<u32> {
+        let mut out = Vec::new();
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snap == INVALID_HANDLE_VALUE {
+                return out;
+            }
+            let mut e: PROCESSENTRY32W = std::mem::zeroed();
+            e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut ok = Process32FirstW(snap, &mut e);
+            while ok != 0 {
+                if name(&e.szExeFile).to_lowercase() == TARGET_EXE {
+                    out.push(e.th32ProcessID);
+                }
+                ok = Process32NextW(snap, &mut e);
+            }
+            CloseHandle(snap);
+        }
+        out
+    }
+
+    pub fn has_module(pid: u32, module: &str) -> bool {
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+            if snap == INVALID_HANDLE_VALUE {
+                return false;
+            }
+            let mut e: MODULEENTRY32W = std::mem::zeroed();
+            e.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
+            let mut ok = Module32FirstW(snap, &mut e);
+            let mut found = false;
+            while ok != 0 {
+                if name(&e.szModule).eq_ignore_ascii_case(module) {
+                    found = true;
+                    break;
+                }
+                ok = Module32NextW(snap, &mut e);
+            }
+            CloseHandle(snap);
+            found
+        }
+    }
+
+    /// Carga la DLL dentro del proceso (LoadLibraryW en un hilo remoto). Mismo usuario: no hace falta admin.
+    pub fn inject(pid: u32, dll: &std::path::Path) -> Result<(), String> {
+        let path: Vec<u16> = dll.as_os_str().encode_wide().chain(Some(0)).collect();
+        let bytes = path.len() * 2;
+        unsafe {
+            let h = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, 0, pid);
+            if h.is_null() {
+                return Err(format!("no se pudo abrir el proceso {pid} (error {})", GetLastError()));
+            }
+            let mem = VirtualAllocEx(h, std::ptr::null(), bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if mem.is_null() {
+                CloseHandle(h);
+                return Err("VirtualAllocEx falló".into());
+            }
+            let mut written = 0;
+            if WriteProcessMemory(h, mem, path.as_ptr() as *const _, bytes, &mut written) == 0 {
+                VirtualFreeEx(h, mem, 0, MEM_RELEASE);
+                CloseHandle(h);
+                return Err("WriteProcessMemory falló".into());
+            }
+            let k32 = GetModuleHandleW(wide("kernel32.dll").as_ptr());
+            let Some(ll) = GetProcAddress(k32, c"LoadLibraryW".as_ptr() as *const u8) else {
+                CloseHandle(h);
+                return Err("LoadLibraryW no encontrada".into());
+            };
+            let start: LPTHREAD_START_ROUTINE = Some(std::mem::transmute::<_, unsafe extern "system" fn(*mut core::ffi::c_void) -> u32>(ll));
+            let th = CreateRemoteThread(h, std::ptr::null(), 0, start, mem, 0, std::ptr::null_mut());
+            if th.is_null() {
+                VirtualFreeEx(h, mem, 0, MEM_RELEASE);
+                CloseHandle(h);
+                return Err(format!("CreateRemoteThread falló (error {})", GetLastError()));
+            }
+            WaitForSingleObject(th, 10_000);
+            CloseHandle(th);
+            VirtualFreeEx(h, mem, 0, MEM_RELEASE);
+            CloseHandle(h);
+        }
+        Ok(())
+    }
+
+    /// Un solo vigilante a la vez (mutex con nombre). Devuelve false si ya hay otro.
+    pub fn single_instance() -> bool {
+        unsafe {
+            let m = CreateMutexW(std::ptr::null(), 1, wide("Local\\AeTint.MenuWatcher").as_ptr());
+            !m.is_null() && GetLastError() != ERROR_ALREADY_EXISTS
+        }
+    }
+
+    pub static WATCH_DLL: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    static SEEN: std::sync::Mutex<Option<HashSet<u32>>> = std::sync::Mutex::new(None);
+    static NOT_AE: std::sync::Mutex<Option<HashSet<u32>>> = std::sync::Mutex::new(None);
+
+    fn exe_name(pid: u32) -> Option<String> {
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                return None;
+            }
+            let mut buf = [0u16; 1024];
+            let mut n = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(h, 0, buf.as_mut_ptr(), &mut n) != 0;
+            CloseHandle(h);
+            ok.then(|| String::from_utf16_lossy(&buf[..n as usize]).rsplit('\\').next().unwrap_or("").to_lowercase())
+        }
+    }
+
+    /// Un After Effects nuevo: espera a que arranque, le carga la DLL si hace falta y lo olvida al cerrarse.
+    pub fn on_ae_process(pid: u32) {
+        if !SEEN.lock().unwrap().get_or_insert_with(HashSet::new).insert(pid) {
+            return;
+        }
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            if super::enabled() && !has_module(pid, DLL_NAME) {
+                if let Some(dll) = WATCH_DLL.get() {
+                    let _ = inject(pid, dll);
+                }
+            }
+            unsafe {
+                let h = OpenProcess(SYNCHRONIZATION_SYNCHRONIZE, 0, pid);
+                if !h.is_null() {
+                    WaitForSingleObject(h, INFINITE);
+                    CloseHandle(h);
+                }
+            }
+            if let Some(s) = SEEN.lock().unwrap().as_mut() {
+                s.remove(&pid);
+            }
+        });
+    }
+
+    unsafe extern "system" fn on_show(_: windows_sys::Win32::UI::Accessibility::HWINEVENTHOOK, _: u32, hwnd: windows_sys::Win32::Foundation::HWND, id_object: i32, _: i32, _: u32, _: u32) {
+        if id_object != 0 || hwnd.is_null() {
+            return; // solo ventanas (OBJID_WINDOW)
+        }
+        let mut pid = 0;
+        windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 || SEEN.lock().unwrap().as_ref().is_some_and(|s| s.contains(&pid)) {
+            return;
+        }
+        {
+            let mut g = NOT_AE.lock().unwrap();
+            let set = g.get_or_insert_with(HashSet::new);
+            if set.contains(&pid) {
+                return;
+            }
+            if exe_name(pid).as_deref() != Some(TARGET_EXE) {
+                if set.len() > 4096 {
+                    set.clear();
+                }
+                set.insert(pid);
+                return;
+            }
+        }
+        on_ae_process(pid);
+    }
+
+    /// Duerme hasta que Windows avise de una ventana nueva (EVENT_OBJECT_SHOW), sin gastar CPU mientras tanto.
+    pub fn wait_for_windows() {
+        use windows_sys::Win32::UI::Accessibility::SetWinEventHook;
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        unsafe {
+            SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW, std::ptr::null_mut(), Some(on_show), 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            let mut msg: MSG = std::mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    pub fn watcher_running() -> bool {
+        unsafe {
+            let m = OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, wide("Local\\AeTint.MenuWatcher").as_ptr());
+            if m.is_null() {
+                return false;
+            }
+            CloseHandle(m);
+            true
+        }
+    }
+}
+
+#[cfg(windows)]
+pub use win::{ae_pids, inject, watcher_running};
+
+fn enabled() -> bool {
+    std::fs::read(data_dir().join("menu.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v["enabled"].as_bool())
+        .unwrap_or(false)
+}
+
+/// Modo `--watch`: respaldo para las versiones de AE sin el plugin AeTint.aex. No mira cada pocos segundos:
+/// se queda dormido y Windows le avisa cada vez que aparece una ventana; si es de After Effects, le carga la
+/// DLL (si el plugin no lo hizo ya).
+#[cfg(windows)]
+pub fn watch() -> i32 {
+    if !win::single_instance() {
+        return 0;
+    }
+    let Some(dll) = dll_path() else { return 1 };
+    let _ = win::WATCH_DLL.set(dll);
+    // los After Effects que ya estén abiertos
+    for pid in ae_pids() {
+        win::on_ae_process(pid);
+    }
+    win::wait_for_windows();
+    0
+}
+
+/// Arranca el vigilante en segundo plano (si no está ya).
+pub fn start_watcher() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if watcher_running() {
+            return Ok(());
+        }
+        use std::os::windows::process::CommandExt;
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        std::process::Command::new(exe)
+            .arg("--watch")
+            .creation_flags(0x0800_0000 | 0x0000_0008) // sin ventana, desacoplado
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Inicio con Windows (HKCU\…\Run).
+pub fn set_autostart(on: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let mut c = std::process::Command::new("reg");
+        if on {
+            c.args(["add", key, "/v", "AeTint", "/t", "REG_SZ", "/f", "/d", &format!("\"{}\" --watch", exe.display())]);
+        } else {
+            c.args(["delete", key, "/v", "AeTint", "/f"]);
+        }
+        let st = c.creation_flags(0x0800_0000).status().map_err(|e| e.to_string())?;
+        if !st.success() && on {
+            return Err("no se pudo escribir el inicio automático".into());
+        }
+    }
+    Ok(())
+}
+
+pub fn autostart_enabled() -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        return std::process::Command::new("reg")
+            .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "AeTint"])
+            .creation_flags(0x0800_0000)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+    }
+    #[allow(unreachable_code)]
+    false
+}

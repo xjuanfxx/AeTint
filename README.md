@@ -125,7 +125,7 @@ The Home screen is Adobe's `com.adobe.ccx.start` UXP plugin. Its stylesheets com
 - hooks uxtheme for backgrounds, borders and separators, and sets the title bar colours through DWM;
 - reads AE's *User Interface Brightness* preference to pick the dark or light colours, and reloads `%LOCALAPPDATA%\AeTint\menu.json` live.
 
-If an installed AE version doesn't have the plugin, AeTint starts a fallback watcher that sleeps until Windows reports a new window and only acts on After Effects.
+If an installed AE version doesn't have the plugin, AeTint starts a fallback watcher that sleeps until Windows reports a new window and only acts on After Effects. While it runs it shows the AeTint icon in the system tray (double-click opens AeTint; right-click lets you stop it).
 </details>
 
 <details>

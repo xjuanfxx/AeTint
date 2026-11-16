@@ -272,9 +272,126 @@ mod win {
         use windows_sys::Win32::UI::WindowsAndMessaging::*;
         unsafe {
             SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW, std::ptr::null_mut(), Some(on_show), 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            tray::create();
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
                 DispatchMessageW(&msg);
+            }
+            tray::remove();
+        }
+    }
+
+    /// Icono en la bandeja del sistema mientras el vigilante está en marcha, para que se sepa qué es ese proceso.
+    /// Doble clic: abrir AeTint. Clic derecho: abrir AeTint o detener el vigilante.
+    mod tray {
+        use super::wide;
+        use crate::i18n::t;
+        use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
+        use windows_sys::Win32::Foundation::*;
+        use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+        use windows_sys::Win32::UI::Shell::*;
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+        const WM_TRAY: u32 = WM_APP + 1;
+        const ID_OPEN: usize = 1;
+        const ID_STOP: usize = 2;
+        static HWND_TRAY: AtomicIsize = AtomicIsize::new(0);
+        static WM_TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
+
+        unsafe fn data(hwnd: HWND) -> NOTIFYICONDATAW {
+            let mut d: NOTIFYICONDATAW = std::mem::zeroed();
+            d.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+            d.hWnd = hwnd;
+            d.uID = 1;
+            d
+        }
+
+        unsafe fn add(hwnd: HWND) {
+            let mut d = data(hwnd);
+            d.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+            d.uCallbackMessage = WM_TRAY;
+            let exe: Vec<u16> = std::env::current_exe().map(|p| wide(&p.display().to_string())).unwrap_or_default();
+            d.hIcon = ExtractIconW(GetModuleHandleW(std::ptr::null()), exe.as_ptr(), 0);
+            let tip = wide(t("AeTint · paints the After Effects menus", "AeTint · pinta los menús de After Effects"));
+            for (i, c) in tip.iter().take(d.szTip.len() - 1).enumerate() {
+                d.szTip[i] = *c;
+            }
+            Shell_NotifyIconW(NIM_ADD, &d);
+        }
+
+        fn open_aetint() {
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe).spawn();
+            }
+        }
+
+        unsafe fn show_menu(hwnd: HWND) {
+            let m = CreatePopupMenu();
+            AppendMenuW(m, MF_STRING, ID_OPEN, wide(t("Open AeTint", "Abrir AeTint")).as_ptr());
+            AppendMenuW(m, MF_SEPARATOR, 0, std::ptr::null());
+            AppendMenuW(m, MF_STRING, ID_STOP, wide(t("Stop (until AeTint opens again)", "Detener (hasta que se abra AeTint)")).as_ptr());
+            SetMenuDefaultItem(m, ID_OPEN as u32, 0);
+            let mut pt = POINT { x: 0, y: 0 };
+            GetCursorPos(&mut pt);
+            SetForegroundWindow(hwnd);
+            let cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, hwnd, std::ptr::null()) as usize;
+            DestroyMenu(m);
+            match cmd {
+                ID_OPEN => open_aetint(),
+                ID_STOP => PostQuitMessage(0),
+                _ => {}
+            }
+        }
+
+        unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+            if msg == WM_TRAY {
+                match (lp & 0xffff) as u32 {
+                    WM_LBUTTONDBLCLK => open_aetint(),
+                    WM_RBUTTONUP | WM_CONTEXTMENU => show_menu(hwnd),
+                    _ => {}
+                }
+                return 0;
+            }
+            // el Explorador se reinició: volver a poner el icono
+            if msg != 0 && msg == WM_TASKBAR_CREATED.load(Ordering::Relaxed) {
+                add(hwnd);
+                return 0;
+            }
+            DefWindowProcW(hwnd, msg, wp, lp)
+        }
+
+        pub unsafe fn create() {
+            // menús oscuros como el resto de Windows (uxtheme 135: SetPreferredAppMode, 136: FlushMenuThemes)
+            let ux = LoadLibraryW(wide("uxtheme.dll").as_ptr());
+            if !ux.is_null() {
+                if let Some(f) = GetProcAddress(ux, 135 as *const u8) {
+                    let f: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(f);
+                    f(1);
+                }
+                if let Some(f) = GetProcAddress(ux, 136 as *const u8) {
+                    let f: unsafe extern "system" fn() = std::mem::transmute(f);
+                    f();
+                }
+            }
+            let inst = GetModuleHandleW(std::ptr::null());
+            let cls = wide("AeTintWatcherTray");
+            let wc = WNDCLASSW { lpfnWndProc: Some(proc_), hInstance: inst, lpszClassName: cls.as_ptr(), ..std::mem::zeroed() };
+            RegisterClassW(&wc);
+            let hwnd = CreateWindowExW(0, cls.as_ptr(), wide("AeTint").as_ptr(), WS_OVERLAPPED, 0, 0, 0, 0, std::ptr::null_mut(), std::ptr::null_mut(), inst, std::ptr::null());
+            if hwnd.is_null() {
+                return;
+            }
+            WM_TASKBAR_CREATED.store(RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()), Ordering::Relaxed);
+            HWND_TRAY.store(hwnd as isize, Ordering::Relaxed);
+            add(hwnd);
+        }
+
+        pub unsafe fn remove() {
+            let h = HWND_TRAY.load(Ordering::Relaxed) as HWND;
+            if !h.is_null() {
+                let d = data(h);
+                Shell_NotifyIconW(NIM_DELETE, &d);
             }
         }
     }
@@ -310,6 +427,8 @@ pub fn watch() -> i32 {
     if !win::single_instance() {
         return 0;
     }
+    // idioma del icono de la bandeja
+    crate::i18n::set_lang(&crate::install::load_config().lang);
     let Some(dll) = dll_path() else { return 1 };
     let _ = win::WATCH_DLL.set(dll);
     // los After Effects que ya estén abiertos

@@ -85,8 +85,9 @@ component Btn inherits Rectangle {
     txt := Text {
         text: root.text;
         color: !enabled ? Ui.p.muted : primary ? Ui.p.on-accent : Ui.p.text;
-        font-size: 12.5px;
-        font-weight: 600;
+        font-family: "Archivo Expanded";
+        font-size: 11.5px;
+        font-weight: 800;
     }
     ta := TouchArea {
         enabled: root.enabled;
@@ -157,8 +158,9 @@ component WinBtn inherits Rectangle {
 
 component Cap inherits Text {
     color: Ui.p.text;
-    font-size: 12px;
-    font-weight: 600;
+    font-family: "Archivo Expanded";
+    font-size: 11px;
+    font-weight: 800;
 }
 
 // Logo: gota (el tinte) con una mini timeline dentro: tres capas y el cabezal.
@@ -550,8 +552,9 @@ component Seg inherits Rectangle {
             lbl := Text {
                 text: it;
                 color: k == root.current ? Ui.p.text : Ui.p.muted;
-                font-size: 11.5px;
-                font-weight: k == root.current ? 600 : 500;
+                font-family: "Archivo Expanded";
+                font-size: 10px;
+                font-weight: k == root.current ? 800 : 600;
             }
             sta := TouchArea {
                 mouse-cursor: pointer;
@@ -944,7 +947,7 @@ export component AppWindow inherits Window {
                             VerticalLayout {
                                 padding: 8px;
                                 spacing: 2px;
-                                Text { text: Ui.t("Settings", "Ajustes"); color: Ui.p.muted; font-size: 11px; font-weight: 600; height: 24px; vertical-alignment: center; x: 10px; }
+                                Text { text: Ui.t("Settings", "Ajustes"); color: Ui.p.muted; font-family: "Archivo Expanded"; font-size: 10px; font-weight: 800; height: 24px; vertical-alignment: center; x: 10px; }
                                 OptRow {
                                     label: Ui.t("Paint File, Edit… and the title bar", "Pintar File, Edit… y el título");
                                     on: root.menus;
@@ -1043,7 +1046,7 @@ export component AppWindow inherits Window {
                             background: sva.has-hover && tname.text != "" ? Ui.p.raised : transparent;
                             border-width: 1px;
                             border-color: Ui.p.frame;
-                            Text { text: Ui.t("Save", "Guardar"); color: tname.text == "" ? Ui.p.muted : Ui.p.text; font-size: 11.5px; font-weight: 600; }
+                            Text { text: Ui.t("Save", "Guardar"); color: tname.text == "" ? Ui.p.muted : Ui.p.text; font-family: "Archivo Expanded"; font-size: 10.5px; font-weight: 800; }
                             sva := TouchArea {
                                 enabled: tname.text != "";
                                 mouse-cursor: pointer;

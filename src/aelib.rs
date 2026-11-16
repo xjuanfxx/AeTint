@@ -91,8 +91,9 @@ impl AeLib {
             let dark = blocks.iter().find(|x| x.0 != "light").map(|x| x.2);
             let light = blocks.iter().find(|x| x.0 == "light").map(|x| x.2);
             if let Some(dark) = dark {
+                let mut shared = std::collections::HashMap::new();
                 for x in &self.xml {
-                    let new = crate::drover::recolor(&orig[x.off..x.off + x.size], dark, light)?;
+                    let new = crate::drover::recolor(&orig[x.off..x.off + x.size], dark, light, &mut shared)?;
                     b[x.off..x.off + x.size].copy_from_slice(&new);
                 }
             }

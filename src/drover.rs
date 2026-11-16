@@ -13,7 +13,18 @@ use crate::remap::{shift_accent, GreyMap, Pal, ToneRef};
 use std::collections::HashMap;
 
 /// Recursos XML con colores (solo existen con la interfaz antigua; "AECOLORTHEMES" marca esa interfaz).
-pub const RESOURCES: &[&str] = &["AECOLORTHEMES", "DVACOLORTHEMESV6", "DVACOLORTHEMESV5", "DESIGNAPPCOLORTHEMESV5"];
+/// V5 va primero: sus grises por tema sirven de referencia a los temas que no traen los suyos (V3).
+/// V1–V4 son temas más antiguos que AE 2024 sigue usando (listas, el panel Project, Effects & Presets…).
+pub const RESOURCES: &[&str] = &[
+    "DVACOLORTHEMESV5",
+    "DESIGNAPPCOLORTHEMESV5",
+    "DVACOLORTHEMESV6",
+    "AECOLORTHEMES",
+    "DVACOLORTHEMESV4",
+    "DVACOLORTHEMESV3",
+    "DVACOLORTHEMESV2",
+    "DVACOLORTHEMESV1",
+];
 pub const MARKER: &str = "AECOLORTHEMES";
 
 /// El acento de Adobe en esos temas (azul de Spectrum).
@@ -198,7 +209,8 @@ fn tone_of(kfs: &[&Kf], ents: &HashMap<String, String>, dark: bool) -> Option<To
 }
 
 /// Recolorea un recurso XML de temas. Devuelve el texto nuevo con la misma longitud en bytes.
-pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>) -> Result<Vec<u8>, String> {
+/// `shared`: grises de referencia por tema de los recursos ya procesados; se completa con los de este.
+pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap<String, ToneRef>) -> Result<Vec<u8>, String> {
     let s = std::str::from_utf8(orig).map_err(|_| "tema XML: no es UTF-8".to_string())?;
     let ents = entities(s);
     let kfs = keyframes(s);
@@ -212,7 +224,10 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>) -> Result<Vec<u8>, S
         let Some(dark) = is_dark_theme(&t) else { continue };
         let group: Vec<&Kf> = kfs.iter().filter(|k| k.theme.as_deref() == Some(t.as_str())).collect();
         if let Some(tone) = tone_of(&group, &ents, dark) {
+            shared.entry(t.clone()).or_insert(tone);
             tones.insert(t, tone);
+        } else if let Some(tone) = shared.get(&t) {
+            tones.insert(t, *tone);
         }
     }
     let slider_dark = ToneRef { base: 0.0, raised: 0.10, panel: 0.15, label: 176.0 / 255.0, heading: None, frame: None, accent: ADOBE_BLUE };
@@ -223,16 +238,16 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>) -> Result<Vec<u8>, S
     let mut changed = 0;
     for k in &kfs {
         let Some(name) = get(&k.attrs, "name") else { continue };
-        let (dark, tone) = match &k.theme {
-            Some(t) => match (is_dark_theme(t), tones.get(t)) {
+        // un fotograma con "t" sigue el deslizador aunque esté dentro de un tema (V1/V2)
+        let slider = get(&k.attrs, "t").and_then(|t| resolve(&ents, t));
+        let (dark, tone) = match (slider, &k.theme) {
+            (Some(t), _) if t <= 0.5 => (true, slider_dark),
+            (Some(_), _) => (false, slider_light),
+            (None, Some(t)) => match (is_dark_theme(t), tones.get(t)) {
                 (Some(d), Some(tone)) => (d, *tone),
                 _ => continue,
             },
-            None => match get(&k.attrs, "t").and_then(|t| resolve(&ents, t)) {
-                Some(t) if t <= 0.5 => (true, slider_dark),
-                Some(_) => (false, slider_light),
-                None => continue,
-            },
+            (None, None) => continue,
         };
         let p = if dark {
             pal
@@ -310,6 +325,23 @@ fn fit(s: String, len: usize) -> Result<Vec<u8>, String> {
         }
         s = t;
     }
+    // segundo paso: fuera los comentarios <!-- … --> (también dentro del DTD; no cambian nada)
+    if s.len() > len {
+        let mut t = String::with_capacity(s.len());
+        let mut rest = s.as_str();
+        while let Some(a) = rest.find("<!--") {
+            t.push_str(&rest[..a]);
+            match rest[a..].find("-->") {
+                Some(e) => rest = &rest[a + e + 3..],
+                None => {
+                    rest = &rest[a..];
+                    break;
+                }
+            }
+        }
+        t.push_str(rest);
+        s = t;
+    }
     if s.len() > len {
         return Err(format!("tema XML: el resultado no cabe ({} > {} bytes)", s.len(), len));
     }
@@ -335,7 +367,7 @@ mod tests {
     fn recolors_and_keeps_length() {
         let x = "<?xml version=\"1.0\"?>\n<!DOCTYPE T [\n  <!ENTITY Darkest \"0.0\">\n  <!ENTITY kColor_ApplicationBackground \"1\">\n  <!ENTITY kColor_ContentBackground \"2\">\n  <!ENTITY g1 \"0.0863\">\n]>\n<ThemeParameters>\n  <ThemeColors>\n    <Theme t=\"&Darkest;\" >\n      <KeyFrame name=\"&kColor_ApplicationBackground;\"      v=\"&g1;\" />\n      <KeyFrame name=\"&kColor_ContentBackground;\"          v=\"0.1373\" />\n      <KeyFrame name=\"&kColor_Blue;\"   h=\"210\" s=\"0.8\" v=\"0.92\" />\n    </Theme>\n  </ThemeColors>\n</ThemeParameters>\n";
         let pal = crate::remap::Palette::default().resolve().unwrap();
-        let out = recolor(x.as_bytes(), &pal, None).unwrap();
+        let out = recolor(x.as_bytes(), &pal, None, &mut HashMap::new()).unwrap();
         assert_eq!(out.len(), x.len());
         let o = String::from_utf8(out).unwrap();
         assert!(o.contains("kColor_ApplicationBackground;\" h="), "{o}");

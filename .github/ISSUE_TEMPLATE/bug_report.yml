@@ -9,7 +9,7 @@ body:
     id: aetint
     attributes:
       label: AeTint version
-      description: Shown next to the logo, e.g. v0.3.1
+      description: Shown next to the logo, e.g. v0.3.2
     validations:
       required: true
   - type: input

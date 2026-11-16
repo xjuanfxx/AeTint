@@ -131,22 +131,24 @@ component Switch inherits Rectangle {
     }
 }
 
-// Botones de la barra de título propia (minimizar, maximizar/restaurar, cerrar)
+// Botones de la barra de título propia (minimizar, maximizar/restaurar, cerrar): pequeños y redondos,
+// al estilo de GNOME; cerrar se pone rojo al pasar el ratón.
 component WinBtn inherits Rectangle {
     in property <int> kind; // 0 minimizar, 1 maximizar, 2 cerrar
     in property <bool> maxed;
     callback clicked;
-    width: 46px;
-    height: 32px;
-    background: ta.has-hover ? (kind == 2 ? #e81123 : Ui.p.frame) : transparent;
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: ta.pressed ? (kind == 2 ? #c42b1c : Ui.p.frame.brighter(0.2)) : ta.has-hover ? (kind == 2 ? #e5484d : Ui.p.frame) : Ui.p.raised;
     animate background { duration: 90ms; }
     Path {
-        width: 10px;
-        height: 10px;
+        width: 8px;
+        height: 8px;
         viewbox-width: 10;
         viewbox-height: 10;
-        stroke: ta.has-hover && kind == 2 ? #ffffff : Ui.p.text;
-        stroke-width: 1px;
+        stroke: ta.has-hover && kind == 2 ? #ffffff : Ui.p.text.mix(Ui.p.muted, 0.35);
+        stroke-width: 1.3px;
         fill: transparent;
         commands: kind == 0 ? "M 0 5.5 L 10 5.5" : kind == 2 ? "M 0.5 0.5 L 9.5 9.5 M 9.5 0.5 L 0.5 9.5" : maxed ? "M 2.5 0.5 L 9.5 0.5 L 9.5 7.5 M 0.5 2.5 L 7.5 2.5 L 7.5 9.5 L 0.5 9.5 Z" : "M 0.5 0.5 L 9.5 0.5 L 9.5 9.5 L 0.5 9.5 Z";
     }
@@ -841,7 +843,7 @@ export component AppWindow inherits Window {
             height: 52px;
             padding-left: 16px;
             // sitio para los botones de ventana (y la línea que los separa del engranaje)
-            padding-right: 148px;
+            padding-right: 112px;
             spacing: 10px;
             VerticalLayout { alignment: center; Logo { size: 28px; } }
             VerticalLayout {
@@ -1307,7 +1309,7 @@ export component AppWindow inherits Window {
 
     // línea fina entre los ajustes y los botones de ventana
     Rectangle {
-        x: root.width - 144px;
+        x: root.width - 104px;
         y: 16px;
         width: 1px;
         height: 20px;
@@ -1315,10 +1317,11 @@ export component AppWindow inherits Window {
     }
 
     HorizontalLayout {
-        x: root.width - 138px;
-        y: 0;
-        width: 138px;
-        height: 32px;
+        x: root.width - 92px;
+        y: 15px;
+        width: 78px;
+        height: 22px;
+        spacing: 6px;
         WinBtn { kind: 0; clicked => { root.win-minimize(); } }
         WinBtn { kind: 1; maxed: root.is-max; clicked => { root.win-maximize(); } }
         WinBtn { kind: 2; clicked => { root.win-close(); } }
@@ -1336,7 +1339,7 @@ export component AppWindow inherits Window {
 
     // bordes para cambiar el tamaño (0 N, 1 S, 2 E, 3 O, 4 NE, 5 NO, 6 SE, 7 SO)
     for z in [
-        { d: 0, x: 8px, y: 0px, w: root.width - 16px - 140px, h: 5px },
+        { d: 0, x: 8px, y: 0px, w: root.width - 16px, h: 5px },
         { d: 1, x: 8px, y: root.height - 5px, w: root.width - 16px, h: 5px },
         { d: 2, x: root.width - 5px, y: 32px, w: 5px, h: root.height - 40px },
         { d: 3, x: 0px, y: 8px, w: 5px, h: root.height - 16px },

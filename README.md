@@ -50,18 +50,29 @@
 
 ## Getting started
 
+### Install
+
+Download **`AeTint-Setup.exe`** from the [latest release](https://github.com/xjuanfxx/AeTint/releases/latest) and run it. It installs AeTint for your user in `%LOCALAPPDATA%\Programs\AeTint` (no administrator rights needed), adds Start menu / desktop shortcuts and an entry in **Settings → Apps** to uninstall it. Running a newer setup updates AeTint in place.
+
+The uninstaller can restore After Effects to its original colours (removing the `AeTint.aex` plugin) and optionally delete your settings and saved themes.
+
+AeTint checks GitHub for new releases when it opens; when there is one, an **Update** badge appears next to the logo.
+
+Prefer a portable copy? `AeTint-windows-x64.zip` has the same three files.
+
 ### Requirements
 
 - Windows 10 or 11
 - After Effects 2026 or 2027 (2025 is very likely to work — same Spectrum UI)
-- [Rust](https://rustup.rs) to build it
+- [Rust](https://rustup.rs) to build it yourself
 
 ### Build
 
 ```bash
 git clone https://github.com/xjuanfxx/AeTint.git
 cd AeTint
-cargo build --release --workspace
+cargo build --release --workspace --exclude aetint_setup
+cargo build --release -p aetint_setup   # the installer embeds the files built above
 ```
 
 Everything ends up in `target\release`. Keep these three files together:
@@ -148,6 +159,7 @@ ui/app.slint         the interface
 crates/menuhook      aetint_menu.dll — menus and title bar inside After Effects
 crates/loader        aetint_loader.dll → AeTint.aex — the startup plugin
 crates/menutest      a Win32 test window with AE-like menus
+crates/setup         AeTint-Setup.exe — installer and uninstaller with the app's look
 ```
 
 ```bash

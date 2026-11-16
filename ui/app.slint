@@ -691,6 +691,10 @@ export component AppWindow inherits Window {
     // brillo que se edita: oscuro (Darkest y Dark de AE) o claro (Light)
     in property <bool> edit-light;
     callback set-edit-light(bool);
+    // versión actual y, si hay una más nueva en GitHub, su número
+    in property <string> app-version;
+    in property <string> update-version;
+    callback open-update();
     property <int> lib-tab: 0;
     callback start-drag();
     callback start-resize(int);
@@ -748,12 +752,59 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 alignment: center;
                 spacing: 1px;
-                Text {
-                    text: "AeTint";
-                    color: Ui.p.text;
-                    font-family: "Archivo Expanded";
-                    font-size: 22px;
-                    font-weight: 800;
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    Text {
+                        text: "AeTint";
+                        color: Ui.p.text;
+                        font-family: "Archivo Expanded";
+                        font-size: 22px;
+                        font-weight: 800;
+                    }
+                    // versión actual, o aviso de actualización (pulsar abre la Release)
+                    VerticalLayout {
+                        alignment: center;
+                        if root.update-version == "": Text {
+                            text: "v" + root.app-version;
+                            color: Ui.p.muted;
+                            font-family: "JetBrains Mono";
+                            font-size: 10.5px;
+                        }
+                        if root.update-version != "": Rectangle {
+                            height: 20px;
+                            width: upd-row.preferred-width + 20px;
+                            border-radius: 10px;
+                            background: upd-ta.has-hover ? Ui.p.accent.brighter(0.12) : Ui.p.accent;
+                            upd-row := HorizontalLayout {
+                                x: 10px;
+                                spacing: 5px;
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 6px;
+                                        height: 6px;
+                                        border-radius: 3px;
+                                        background: Ui.p.on-accent;
+                                        opacity: 0.45 + 0.55 * Math.abs(Math.sin(animation-tick() / 6ms * 1deg));
+                                    }
+                                }
+                                Text {
+                                    text: Ui.t("Update", "Actualizar") + " v" + root.update-version;
+                                    color: Ui.p.on-accent;
+                                    font-family: "Archivo Expanded";
+                                    font-size: 9.5px;
+                                    font-weight: 800;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            upd-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-update(); }
+                            }
+                        }
+                    }
                 }
                 Text { text: Ui.t("After Effects themes · panels, timeline and menus", "Temas para After Effects · paneles, timeline y menús"); color: Ui.p.muted; font-size: 11px; }
             }

@@ -26,7 +26,11 @@ jobs:
         run: cargo test --workspace
 
       - name: Build
-        run: cargo build --release --workspace
+        run: cargo build --release --workspace --exclude aetint_setup
+
+      # el instalador lleva dentro AeTint.exe y las DLL: se compila después
+      - name: Build installer
+        run: cargo build --release -p aetint_setup
 
       # AeTint.exe, aetint_menu.dll y aetint_loader.dll tienen que ir juntos en la misma carpeta
       - name: Package
@@ -39,6 +43,7 @@ jobs:
           }
           Copy-Item README.md, LICENSE $out
           Compress-Archive -Path $out -DestinationPath dist/AeTint-windows-x64.zip -Force
+          Copy-Item target/release/AeTint-Setup.exe dist/AeTint-Setup.exe
           Get-ChildItem $out | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4
@@ -46,9 +51,16 @@ jobs:
           name: AeTint-windows-x64
           path: dist/AeTint
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AeTint-Setup
+          path: dist/AeTint-Setup.exe
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AeTint-windows-x64.zip
+          files: |
+            dist/AeTint-Setup.exe
+            dist/AeTint-windows-x64.zip
           generate_release_notes: true

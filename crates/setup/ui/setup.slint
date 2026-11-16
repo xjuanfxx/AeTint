@@ -1,0 +1,406 @@
+// Instalador de AeTint: mismo diseño que la app (logo, fuentes, colores Catppuccin Mocha, barra propia).
+import "../../../ui/fonts/Inter-Regular.ttf";
+import "../../../ui/fonts/Inter-Medium.ttf";
+import "../../../ui/fonts/Inter-SemiBold.ttf";
+import "../../../ui/fonts/Inter-Bold.ttf";
+import "../../../ui/fonts/ArchivoExpanded-SemiBold.ttf";
+import "../../../ui/fonts/ArchivoExpanded-ExtraBold.ttf";
+import "../../../ui/fonts/JetBrainsMono-Medium.ttf";
+
+global P {
+    out property <color> base: #11111b;
+    out property <color> panel: #1e1e2e;
+    out property <color> raised: #181825;
+    out property <color> frame: #313244;
+    out property <color> text: #cdd6f4;
+    out property <color> muted: #8b8fa8;
+    out property <color> accent: #7a80c2;
+    out property <color> on-accent: #11111b;
+    out property <color> ok: #a6e3a1;
+    out property <color> bad: #f38ba8;
+}
+
+export global L {
+    in-out property <bool> es: false;
+    public pure function t(en: string, es-text: string) -> string { return self.es ? es-text : en; }
+}
+
+component Logo inherits Rectangle {
+    in property <length> size: 64px;
+    property <length> u: self.size / 32;
+    width: size;
+    height: size;
+    border-radius: size * 0.28;
+    background: @linear-gradient(135deg, P.accent.brighter(0.35) 0%, P.accent 50%, P.accent.darker(0.45) 100%);
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 4px;
+    drop-shadow-color: P.accent.with-alpha(0.45);
+    Path {
+        x: 0;
+        y: 0;
+        width: root.size;
+        height: root.size;
+        viewbox-width: 32;
+        viewbox-height: 32;
+        fill: white;
+        commands: "M16 4.5 C16 4.5 8.5 12.6 8.5 18.3 A7.5 7.5 0 0 0 23.5 18.3 C23.5 12.6 16 4.5 16 4.5 Z";
+    }
+    for b in [{ x: 11.0, y: 15.6, w: 7.5 }, { x: 13.0, y: 18.6, w: 8.0 }, { x: 11.5, y: 21.6, w: 5.5 }]: Rectangle {
+        x: root.u * b.x;
+        y: root.u * b.y;
+        width: root.u * b.w;
+        height: root.u * 1.9;
+        border-radius: root.u;
+        background: P.base;
+    }
+    Rectangle { x: root.u * 17.4; y: root.u * 12.6; width: root.u * 1.2; height: root.u * 11.8; background: P.accent.darker(0.1); }
+    Rectangle { x: root.u * 16.5; y: root.u * 11.4; width: root.u * 3; height: root.u * 2.2; border-radius: root.u * 0.7; background: P.accent.darker(0.1); }
+}
+
+component Btn inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 40px;
+    min-width: txt.preferred-width + 40px;
+    border-radius: 10px;
+    property <color> fill: danger ? P.bad : P.accent;
+    background: !enabled ? P.raised : primary ? (ta.has-hover ? fill.brighter(0.12) : fill) : (ta.has-hover ? P.frame : transparent);
+    border-width: primary ? 0 : 1px;
+    border-color: P.frame;
+    drop-shadow-blur: primary && enabled ? 16px : 0;
+    drop-shadow-color: fill.with-alpha(0.35);
+    animate background { duration: 120ms; }
+    txt := Text {
+        text: root.text;
+        color: !enabled ? P.muted : primary ? P.on-accent : P.text;
+        font-family: "Archivo Expanded";
+        font-size: 12.5px;
+        font-weight: 800;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component Switch inherits Rectangle {
+    in property <bool> on;
+    width: 34px;
+    height: 20px;
+    border-radius: 10px;
+    background: on ? P.accent : P.raised;
+    border-width: 1px;
+    border-color: on ? P.accent : P.frame;
+    animate background { duration: 150ms; }
+    Rectangle {
+        x: on ? parent.width - self.width - 3px : 3px;
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        background: on ? P.on-accent : P.muted;
+        animate x { duration: 150ms; easing: ease-out; }
+    }
+}
+
+component Option inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    in-out property <bool> on;
+    height: 44px;
+    border-radius: 10px;
+    background: ta.has-hover ? P.raised : transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.label; color: P.text; font-size: 13px; font-weight: 600; }
+            if root.hint != "": Text { text: root.hint; color: P.muted; font-size: 11px; }
+        }
+        VerticalLayout { alignment: center; Switch { on: root.on; } }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.on = !root.on; }
+    }
+}
+
+component WinBtn inherits Rectangle {
+    in property <int> kind; // 0 minimizar, 2 cerrar
+    callback clicked;
+    width: 46px;
+    height: 32px;
+    background: ta.has-hover ? (kind == 2 ? #e81123 : P.frame) : transparent;
+    Path {
+        width: 10px;
+        height: 10px;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        stroke: ta.has-hover && kind == 2 ? #ffffff : P.text;
+        stroke-width: 1px;
+        fill: transparent;
+        commands: kind == 0 ? "M 0 5.5 L 10 5.5" : "M 0.5 0.5 L 9.5 9.5 M 9.5 0.5 L 0.5 9.5";
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component SetupWindow inherits Window {
+    title: "AeTint Setup";
+    icon: @image-url("../../../assets/icon.png");
+    no-frame: true;
+    width: 640px;
+    height: 460px;
+    background: P.base;
+    default-font-family: "Inter";
+
+    in property <bool> uninstall;
+    in property <bool> updating;
+    in property <bool> payload-ok: true;
+    in property <string> version;
+    in property <string> install-dir;
+    // 0 opciones · 1 trabajando · 2 hecho · 3 error
+    in property <int> stage: 0;
+    in property <float> progress: 0;
+    in property <string> status;
+    in-out property <bool> opt-start-menu: true;
+    in-out property <bool> opt-desktop: false;
+    in-out property <bool> opt-launch: true;
+    in-out property <bool> opt-restore: true;
+    in-out property <bool> opt-wipe: false;
+
+    callback run();
+    callback finish();
+    callback close-window();
+    callback minimize();
+    callback drag();
+
+    // brillos de fondo con el acento, como la app
+    Rectangle {
+        x: -220px;
+        y: -260px;
+        width: 620px;
+        height: 620px;
+        background: @radial-gradient(circle, P.accent.with-alpha(0.18) 0%, P.accent.with-alpha(0) 70%);
+    }
+    Rectangle {
+        x: root.width - 360px;
+        y: root.height - 300px;
+        width: 620px;
+        height: 620px;
+        background: @radial-gradient(circle, P.accent.with-alpha(0.10) 0%, P.accent.with-alpha(0) 70%);
+    }
+    // arrastrar la ventana
+    Rectangle {
+        height: 110px;
+        TouchArea {
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.drag(); }
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding: 28px;
+        padding-top: 26px;
+        spacing: 18px;
+
+        HorizontalLayout {
+            spacing: 18px;
+            VerticalLayout { alignment: center; Logo { size: 64px; } }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Text {
+                    text: root.uninstall ? L.t("Uninstall AeTint", "Desinstalar AeTint") : "AeTint";
+                    color: P.text;
+                    font-family: "Archivo Expanded";
+                    font-size: 26px;
+                    font-weight: 800;
+                }
+                Text {
+                    text: (root.uninstall ? L.t("Remove", "Quitar") : root.updating ? L.t("Update", "Actualizar") : L.t("Setup", "Instalación")) + " · v" + root.version;
+                    color: P.muted;
+                    font-size: 12px;
+                    font-family: "JetBrains Mono";
+                }
+            }
+        }
+
+        // ── opciones
+        if root.stage == 0: VerticalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
+            if !root.uninstall: VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: root.updating ? L.t("AeTint is already installed here; this updates it:", "AeTint ya está instalado aquí; esto lo actualiza:") : L.t("AeTint will be installed for your user in:", "AeTint se instalará para tu usuario en:");
+                    color: P.muted;
+                    font-size: 12px;
+                }
+                Rectangle {
+                    height: 36px;
+                    border-radius: 9px;
+                    background: P.raised;
+                    border-width: 1px;
+                    border-color: P.frame;
+                    Text {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        text: root.install-dir;
+                        color: P.text;
+                        font-family: "JetBrains Mono";
+                        font-size: 11.5px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+            if root.uninstall: Text {
+                text: L.t("AeTint will be removed from this computer.", "AeTint se quitará de este equipo.");
+                color: P.muted;
+                font-size: 12.5px;
+            }
+            Rectangle {
+                border-radius: 14px;
+                background: P.panel.with-alpha(0.85);
+                border-width: 1px;
+                border-color: P.frame.with-alpha(0.7);
+                VerticalLayout {
+                    padding: 6px;
+                    if !root.uninstall: Option { label: L.t("Start menu shortcut", "Acceso en el menú Inicio"); on <=> root.opt-start-menu; }
+                    if !root.uninstall: Option { label: L.t("Desktop shortcut", "Acceso en el escritorio"); on <=> root.opt-desktop; }
+                    if !root.uninstall: Option { label: L.t("Open AeTint when finished", "Abrir AeTint al terminar"); on <=> root.opt-launch; }
+                    if root.uninstall: Option {
+                        label: L.t("Restore After Effects to its original colours", "Devolver After Effects a sus colores originales");
+                        hint: L.t("Also removes the AeTint.aex plugin · AE must be closed", "Quita también el plugin AeTint.aex · AE debe estar cerrado");
+                        on <=> root.opt-restore;
+                    }
+                    if root.uninstall: Option {
+                        label: L.t("Delete my settings and saved themes", "Borrar mi configuración y mis temas");
+                        hint: L.t("Backups of Adobe's files are kept unless this is on", "Las copias de los archivos de Adobe se conservan salvo que lo actives");
+                        on <=> root.opt-wipe;
+                    }
+                }
+            }
+            if !root.payload-ok: Text {
+                text: L.t("This installer was built without AeTint's files.", "Este instalador se compiló sin los archivos de AeTint.");
+                color: P.bad;
+                font-size: 12px;
+            }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: end;
+                Btn {
+                    text: L.t("Cancel", "Cancelar");
+                    clicked => { root.close-window(); }
+                }
+                Btn {
+                    text: root.uninstall ? L.t("Uninstall", "Desinstalar") : root.updating ? L.t("Update", "Actualizar") : L.t("Install", "Instalar");
+                    primary: true;
+                    danger: root.uninstall;
+                    enabled: root.payload-ok || root.uninstall;
+                    min-width: 140px;
+                    clicked => { root.run(); }
+                }
+            }
+        }
+
+        // ── trabajando
+        if root.stage == 1: VerticalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.status;
+                color: P.text;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            Rectangle {
+                height: 8px;
+                border-radius: 4px;
+                background: P.raised;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * max(0.04, root.progress);
+                    border-radius: 4px;
+                    background: @linear-gradient(90deg, P.accent.darker(0.2) 0%, P.accent.brighter(0.25) 100%);
+                    animate width { duration: 220ms; easing: ease-out; }
+                }
+            }
+        }
+
+        // ── hecho / error
+        if root.stage >= 2: VerticalLayout {
+            spacing: 16px;
+            vertical-stretch: 1;
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                spacing: 14px;
+                alignment: start;
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: (root.stage == 2 ? P.ok : P.bad).with-alpha(0.18);
+                    border-width: 1.5px;
+                    border-color: root.stage == 2 ? P.ok : P.bad;
+                    Text {
+                        text: root.stage == 2 ? "✓" : "!";
+                        color: root.stage == 2 ? P.ok : P.bad;
+                        font-size: 18px;
+                        font-weight: 800;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.stage == 3 ? L.t("Something went wrong", "Algo salió mal") : root.uninstall ? L.t("AeTint was removed", "AeTint se ha quitado") : L.t("AeTint is ready", "AeTint está listo");
+                        color: P.text;
+                        font-family: "Archivo Expanded";
+                        font-size: 16px;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: root.status;
+                        color: P.muted;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                alignment: end;
+                Btn {
+                    text: root.stage == 2 && !root.uninstall && root.opt-launch ? L.t("Open AeTint", "Abrir AeTint") : L.t("Close", "Cerrar");
+                    primary: true;
+                    min-width: 140px;
+                    clicked => { root.finish(); }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: root.width - 92px;
+        y: 0;
+        width: 92px;
+        height: 32px;
+        WinBtn { kind: 0; clicked => { root.minimize(); } }
+        WinBtn { kind: 2; clicked => { root.close-window(); } }
+    }
+    Rectangle {
+        border-width: 1px;
+        border-color: P.frame;
+    }
+}

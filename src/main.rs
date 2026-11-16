@@ -14,6 +14,7 @@ mod jsonfit;
 mod menus;
 mod pe;
 mod remap;
+mod update;
 mod uxp;
 
 use i18n::t;
@@ -361,6 +362,17 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(i) = args.iter().position(|a| a == "--install") {
         let code = args.get(i + 1).map(|m| install::run_install(std::path::Path::new(m))).unwrap_or(1);
         std::process::exit(code);
+    }
+    // desinstalador: devuelve todas las versiones de AE a sus originales, quita el plugin y el inicio con Windows
+    if args.iter().any(|a| a == "--restore-all") {
+        let cfg = install::load_config();
+        i18n::set_lang(&cfg.lang);
+        let _ = menus::set_autostart(false);
+        let r = install::restore(&install::find_targets());
+        if let Err(e) = &r {
+            eprintln!("{e}");
+        }
+        std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
     // vigilante de menús: carga aetint_menu.dll en cada After Effects que se abra
     if args.iter().any(|a| a == "--watch") {
@@ -783,5 +795,34 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     ui.set_status(SharedString::from(idle_status()));
     scan_status(&ui, targets);
+
+    // ── actualizaciones: la última Release de GitHub, en segundo plano
+    ui.set_app_version(update::CURRENT.into());
+    let update_url: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+    ui.on_open_update({
+        let u = update_url.clone();
+        move || update::open(&u.borrow())
+    });
+    {
+        let weak = ui.as_weak();
+        let u = update_url.clone();
+        let (tx, rx) = std::sync::mpsc::channel::<(String, String)>();
+        std::thread::spawn(move || {
+            if let Some(up) = update::check() {
+                let _ = tx.send((up.version, up.url));
+            }
+        });
+        // el resultado llega a este hilo (el de la interfaz) por un temporizador corto
+        let timer = slint::Timer::default();
+        timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(500), move || {
+            if let Ok((v, url)) = rx.try_recv() {
+                *u.borrow_mut() = url;
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_update_version(v.into());
+                }
+            }
+        });
+        std::mem::forget(timer);
+    }
     ui.run()
 }

@@ -227,6 +227,13 @@ component Picker inherits Rectangle {
                 border-color: white;
                 background: Ui.hsv-color(root.h, root.s, root.v);
             }
+            // borde encima: tapa el filo claro que deja el suavizado de las esquinas (capa blanca bajo la negra)
+            Rectangle {
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Ui.p.frame;
+                background: transparent;
+            }
             TouchArea {
                 mouse-cursor: crosshair;
                 function upd() {
@@ -833,8 +840,8 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             height: 52px;
             padding-left: 16px;
-            // sitio para los botones de ventana
-            padding-right: 138px;
+            // sitio para los botones de ventana (y la línea que los separa del engranaje)
+            padding-right: 148px;
             spacing: 10px;
             VerticalLayout { alignment: center; Logo { size: 28px; } }
             VerticalLayout {
@@ -906,15 +913,15 @@ export component AppWindow inherits Window {
                     height: 32px;
                     border-radius: 7px;
                     background: gear-ta.has-hover ? Ui.p.raised : transparent;
+                    // engranaje
                     Path {
                         width: 16px;
                         height: 16px;
                         viewbox-width: 16;
                         viewbox-height: 16;
-                        stroke: Ui.p.text.mix(Ui.p.muted, 0.5);
-                        stroke-width: 1.4px;
-                        fill: transparent;
-                        commands: "M 2 4 L 14 4 M 2 8 L 14 8 M 2 12 L 14 12 M 5 2.5 L 5 5.5 M 11 6.5 L 11 9.5 M 7 10.5 L 7 13.5";
+                        fill: gear-ta.has-hover ? Ui.p.text : Ui.p.text.mix(Ui.p.muted, 0.45);
+                        fill-rule: evenodd;
+                        commands: "M 8.00 2.10 L 9.48 0.55 L 10.91 0.98 L 11.28 3.09 L 12.17 3.83 L 14.32 3.78 L 15.02 5.09 L 13.79 6.85 L 13.90 8.00 L 15.45 9.48 L 15.02 10.91 L 12.91 11.28 L 12.17 12.17 L 12.22 14.32 L 10.91 15.02 L 9.15 13.79 L 8.00 13.90 L 6.52 15.45 L 5.09 15.02 L 4.72 12.91 L 3.83 12.17 L 1.68 12.22 L 0.98 10.91 L 2.21 9.15 L 2.10 8.00 L 0.55 6.52 L 0.98 5.09 L 3.09 4.72 L 3.83 3.83 L 3.78 1.68 L 5.09 0.98 L 6.85 2.21 Z M 10.60 8 A 2.6 2.6 0 1 0 5.40 8 A 2.6 2.6 0 1 0 10.60 8 Z";
                     }
                     gear-ta := TouchArea {
                         mouse-cursor: pointer;
@@ -1296,6 +1303,15 @@ export component AppWindow inherits Window {
             ]
         }
 
+    }
+
+    // línea fina entre los ajustes y los botones de ventana
+    Rectangle {
+        x: root.width - 144px;
+        y: 16px;
+        width: 1px;
+        height: 20px;
+        background: Ui.p.frame;
     }
 
     HorizontalLayout {

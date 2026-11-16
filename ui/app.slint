@@ -787,8 +787,8 @@ export component AppWindow inherits Window {
                                 background: Ui.p.on-accent.with-alpha(0.22);
                                 animate width { duration: 150ms; }
                             }
+                            // centrada en la pastilla (10 px a cada lado por el ancho de arriba)
                             upd-row := HorizontalLayout {
-                                x: 10px;
                                 spacing: 5px;
                                 alignment: center;
                                 VerticalLayout {

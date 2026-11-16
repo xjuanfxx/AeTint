@@ -285,14 +285,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         match msg {
             WM_MEASUREITEM => {
                 let mis = &mut *(lp as *mut MEASUREITEMSTRUCT);
-                if let Some(it) = od_item(mis.itemData).filter(|_| mis.CtlType == ODT_MENU) {
+                if let Some(it) = od_item(mis.itemID, mis.itemData).filter(|_| mis.CtlType == ODT_MENU) {
                     od_measure(hwnd, mis, it);
                     return 1;
                 }
             }
             WM_DRAWITEM => {
                 let d = &*(lp as *const DRAWITEMSTRUCT);
-                if let Some(it) = od_item(d.itemData).filter(|_| d.CtlType == ODT_MENU) {
+                if let Some(it) = od_item(d.itemID, d.itemData).filter(|_| d.CtlType == ODT_MENU) {
                     od_draw(hwnd, d, it, &native_colors());
                     return 1;
                 }
@@ -346,7 +346,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_MEASUREITEM => {
             let mis = &mut *(lp as *mut MEASUREITEMSTRUCT);
-            match od_item(mis.itemData) {
+            match od_item(mis.itemID, mis.itemData) {
                 Some(it) if mis.CtlType == ODT_MENU => {
                     od_measure(hwnd, mis, it);
                     1
@@ -356,7 +356,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_DRAWITEM => {
             let d = &*(lp as *const DRAWITEMSTRUCT);
-            match od_item(d.itemData) {
+            match od_item(d.itemID, d.itemData) {
                 Some(it) if d.CtlType == ODT_MENU => {
                     od_draw(hwnd, d, it, &c);
                     1
@@ -474,11 +474,18 @@ static OD_MENUS: Mutex<Option<HashSet<isize>>> = Mutex::new(None);
 static CWP_THREADS: Mutex<Option<HashSet<u32>>> = Mutex::new(None);
 static MODULE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
-fn od_item(data: usize) -> Option<&'static OdItem> {
-    if data == 0 || !OD_ITEMS.lock().ok()?.as_ref()?.contains(&data) {
-        return None;
-    }
-    let it = unsafe { &*(data as *const OdItem) };
+/// Opciones con datos propios de AE (dwItemData ocupado): se reconocen por (identificador, datos de AE),
+/// así sus datos quedan intactos.
+static OD_KEYED: Mutex<Option<HashMap<(u32, usize), usize>>> = Mutex::new(None);
+
+/// La opción owner-draw nuestra que corresponde a un WM_MEASUREITEM / WM_DRAWITEM (por su id y sus datos).
+fn od_item(id: u32, data: usize) -> Option<&'static OdItem> {
+    let ptr = if data != 0 && OD_ITEMS.lock().ok()?.as_ref()?.contains(&data) {
+        data
+    } else {
+        *OD_KEYED.lock().ok()?.as_ref()?.get(&(id, data))?
+    };
+    let it = unsafe { &*(ptr as *const OdItem) };
     (it.magic == OD_MAGIC).then_some(it)
 }
 
@@ -528,15 +535,15 @@ unsafe fn own_menu(m: HMENU, c: &Colors, hwnd: HWND) {
         let mut buf = [0u16; 512];
         let mut mii: MENUITEMINFOW = std::mem::zeroed();
         mii.cbSize = std::mem::size_of::<MENUITEMINFOW>() as u32;
-        mii.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_SUBMENU | MIIM_DATA | MIIM_BITMAP;
+        mii.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_SUBMENU | MIIM_DATA | MIIM_BITMAP | MIIM_ID;
         mii.dwTypeData = buf.as_mut_ptr();
         mii.cch = buf.len() as u32 - 1;
         if GetMenuItemInfoW(m, i as u32, 1, &mut mii) == 0 {
             continue;
         }
-        // ya es owner-draw (nuestro o de AE), lleva datos o icono de AE, o es un bitmap: no se toca,
+        // ya es owner-draw (nuestro o de AE), lleva icono de AE o es un bitmap: no se toca,
         // salvo la línea clásica entre columnas (MFT_MENUBARBREAK → MFT_MENUBREAK)
-        if mii.fType & (MFT_OWNERDRAW | MFT_BITMAP) != 0 || mii.dwItemData != 0 || !mii.hbmpItem.is_null() {
+        if mii.fType & (MFT_OWNERDRAW | MFT_BITMAP) != 0 || !mii.hbmpItem.is_null() {
             if mii.fType & MFT_MENUBARBREAK != 0 {
                 let mut set: MENUITEMINFOW = std::mem::zeroed();
                 set.cbSize = std::mem::size_of::<MENUITEMINFOW>() as u32;
@@ -552,14 +559,21 @@ unsafe fn own_menu(m: HMENU, c: &Colors, hwnd: HWND) {
             None => (text.to_vec(), Vec::new()),
         };
         let it = Box::into_raw(Box::new(OdItem { magic: OD_MAGIC, label, accel, sep: mii.fType & MFT_SEPARATOR != 0, sub: !mii.hSubMenu.is_null(), menu: m as isize })) as usize;
-        OD_ITEMS.lock().unwrap().get_or_insert_with(HashSet::new).insert(it);
         let mut set: MENUITEMINFOW = std::mem::zeroed();
         set.cbSize = std::mem::size_of::<MENUITEMINFOW>() as u32;
-        set.fMask = MIIM_FTYPE | MIIM_DATA;
         // la columna se separa con el fondo, sin la línea clásica en relieve
         let brk = if mii.fType & MFT_MENUBARBREAK != 0 { MFT_MENUBREAK } else { 0 };
         set.fType = (mii.fType & !MFT_MENUBARBREAK) | brk | MFT_OWNERDRAW;
-        set.dwItemData = it;
+        if mii.dwItemData == 0 {
+            // sin datos de AE: la opción guarda la referencia a la nuestra
+            OD_ITEMS.lock().unwrap().get_or_insert_with(HashSet::new).insert(it);
+            set.fMask = MIIM_FTYPE | MIIM_DATA;
+            set.dwItemData = it;
+        } else {
+            // con datos de AE (p. ej. los submenús de los menús contextuales): se dejan intactos
+            OD_KEYED.lock().unwrap().get_or_insert_with(HashMap::new).insert((mii.wID, mii.dwItemData), it);
+            set.fMask = MIIM_FTYPE;
+        }
         if SetMenuItemInfoW(m, i as u32, 1, &set) != 0 {
             n_done += 1;
         }

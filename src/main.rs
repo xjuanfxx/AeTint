@@ -203,6 +203,22 @@ fn preset_items(light: bool) -> ModelRc<PresetItem> {
     ))
 }
 
+/// Actualiza las filas en su sitio cuando la lista conserva su tamaño: si se reemplazara el modelo,
+/// Slint recrearía cada fila y cerraría el selector de color abierto mientras se arrastra.
+fn set_rows<T: Clone + PartialEq + 'static>(cur: ModelRc<T>, rows: Vec<T>, replace: impl FnOnce(ModelRc<T>)) {
+    if let Some(vm) = cur.as_any().downcast_ref::<VecModel<T>>() {
+        if vm.row_count() == rows.len() {
+            for (i, r) in rows.into_iter().enumerate() {
+                if vm.row_data(i).as_ref() != Some(&r) {
+                    vm.set_row_data(i, r);
+                }
+            }
+            return;
+        }
+    }
+    replace(ModelRc::new(VecModel::from(rows)));
+}
+
 fn refresh(ui: &AppWindow, app: &App) {
     let editing = if app.edit_light { &app.cfg.light } else { &app.cfg.palette };
     let Ok(pal) = editing.resolve() else { return };
@@ -248,7 +264,7 @@ fn refresh(ui: &AppWindow, app: &App) {
             }
         })
         .collect();
-    ui.set_palette(ModelRc::new(VecModel::from(rows)));
+    set_rows(ui.get_palette(), rows, |m| ui.set_palette(m));
 
     let tl: Vec<ColorEntry> = aelib::GROUPS
         .iter()
@@ -265,7 +281,7 @@ fn refresh(ui: &AppWindow, app: &App) {
             }
         })
         .collect();
-    ui.set_timeline(ModelRc::new(VecModel::from(tl)));
+    set_rows(ui.get_timeline(), tl, |m| ui.set_timeline(m));
 
     let ts: Vec<TargetItem> = app
         .targets

@@ -79,6 +79,20 @@ fn accent_like(n: &str) -> bool {
     is_accent(n) || n == "blue" || n.starts_with("blue-") || n.starts_with("focus") || n.contains("-blue")
 }
 
+/// Otro color con nombre propio (familias de Spectrum, curvas del graph editor…): nunca es el acento.
+fn own_colour(n: &str) -> bool {
+    const F: &[&str] = &[
+        "celery", "chartreuse", "yellow", "magenta", "fuchsia", "purple", "indigo", "seafoam", "cyan", "red", "orange", "green", "negative",
+        "positive", "notice", "graph", "label", "vary",
+    ];
+    F.iter().any(|f| n.contains(f))
+}
+
+/// En estos temas el único azul es el acento de Adobe (selección, enlaces, botones principales…).
+fn blue(h: f32, s: f32) -> bool {
+    (190.0..=235.0).contains(&h) && s > 0.3
+}
+
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Rgb {
     let h = (h.rem_euclid(360.0)) / 60.0;
     let c = v * s;
@@ -243,7 +257,7 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>) -> Result<Vec<u8>, S
                 continue;
             }
             GreyMap::new(&tone, p).map(v)
-        } else if accent_like(&n) {
+        } else if accent_like(&n) || (blue(h, sat) && !own_colour(&n)) {
             shift_accent(hsv_to_rgb(h, sat, v), tone.accent, p.accent)
         } else {
             continue;

@@ -19,6 +19,8 @@ pub const HOME_FILES: &[&str] = &[
     "UXP/plugins/com.adobe.ccx.start/js/desktop.css",
     "UXP/plugins/com.adobe.ccx.start/js/5.js",
     "UXP/plugins/com.adobe.ccx.start/js/67.bundle.js",
+    // AE 2024: el CSS de Spectrum va incrustado aquí
+    "UXP/plugins/com.adobe.ccx.start/js/4.js",
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]

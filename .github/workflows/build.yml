@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # para publicar la Release cuando se sube una etiqueta v*
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Build
+        run: cargo build --release --workspace
+
+      # AeTint.exe, aetint_menu.dll y aetint_loader.dll tienen que ir juntos en la misma carpeta
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "dist/AeTint"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          foreach ($f in "AeTint.exe", "aetint_menu.dll", "aetint_loader.dll") {
+            Copy-Item "target/release/$f" $out
+          }
+          Copy-Item README.md, LICENSE $out
+          Compress-Archive -Path $out -DestinationPath dist/AeTint-windows-x64.zip -Force
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AeTint-windows-x64
+          path: dist/AeTint
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AeTint-windows-x64.zip
+          generate_release_notes: true

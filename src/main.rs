@@ -141,12 +141,37 @@ struct App {
     targets: Vec<Target>,
     status: HashMap<String, String>,
     defaults: Value,
+    /// la última tarea (Some(true) = restaurar), para el botón "Retry" del aviso de estado
+    last_restore: Option<bool>,
 }
 
 impl App {
     fn selected(&self) -> Vec<Target> {
         self.targets.iter().filter(|t| self.cfg.selected.contains(&t.id)).cloned().collect()
     }
+
+    /// ¿Alguna versión marcada no tiene instalado el tema que se está editando?
+    fn pending(&self) -> bool {
+        let st = install::load_state();
+        self.selected().iter().any(|t| match st.applied.get(&t.id) {
+            Some(a) => a.palette != self.cfg.palette || a.light.as_ref() != Some(&self.cfg.light) || a.overrides != self.cfg.overrides,
+            None => true,
+        })
+    }
+}
+
+/// El botón del aviso de estado: "Retry" tras un error, "Apply" si hay cambios sin aplicar.
+fn status_action(ui: &AppWindow, app: &App) {
+    let a = if ui.get_busy() {
+        ""
+    } else if ui.get_status_error() && app.last_restore.is_some() {
+        t("Retry", "Reintentar")
+    } else if !app.selected().is_empty() && app.pending() {
+        t("Apply", "Aplicar")
+    } else {
+        ""
+    };
+    ui.set_status_action(a.into());
 }
 
 #[cfg(windows)]
@@ -295,6 +320,7 @@ fn refresh(ui: &AppWindow, app: &App) {
         })
         .collect();
     ui.set_targets(ModelRc::new(VecModel::from(ts)));
+    status_action(ui, app);
 }
 
 /// Estado de cada instalación (en segundo plano: hay que leer ~80 MB por versión).
@@ -357,7 +383,9 @@ fn run_job(ui: &AppWindow, app: &Rc<RefCell<App>>, restore: bool) {
         ui.set_status_ok(false);
         return;
     }
+    app.borrow_mut().last_restore = Some(restore);
     ui.set_busy(true);
+    ui.set_status_action("".into());
     ui.set_status_error(false);
     ui.set_status_ok(false);
     ui.set_status(if restore { t("Restoring…", "Restaurando…") } else { t("Applying…", "Aplicando…") }.into());
@@ -484,6 +512,7 @@ fn main() -> Result<(), slint::PlatformError> {
         targets: targets.clone(),
         status: HashMap::new(),
         defaults: serde_json::from_str(AE_DEFAULTS).unwrap_or(Value::Null),
+        last_restore: None,
     }));
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -661,6 +690,16 @@ fn main() -> Result<(), slint::PlatformError> {
         move || {
             if let Some(ui) = weak.upgrade() {
                 run_job(&ui, &app, true);
+            }
+        }
+    });
+    // el botón del aviso de estado: repite la última tarea tras un error, o aplica los cambios
+    ui.on_status_act({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move || {
+            if let Some(ui) = weak.upgrade() {
+                let again = if ui.get_status_error() { app.borrow().last_restore } else { None };
+                run_job(&ui, &app, again.unwrap_or(false));
             }
         }
     });

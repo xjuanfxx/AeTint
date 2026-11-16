@@ -652,6 +652,9 @@ export component AppWindow inherits Window {
     in property <string> status;
     in property <bool> status-error;
     in property <bool> status-ok;
+    // botón junto al aviso: "Apply" con cambios sin aplicar, "Retry" tras un error ("" = sin botón)
+    in property <string> status-action;
+    callback status-act();
     in property <bool> busy;
     in property <bool> is-max;
     // destello breve del aviso cuando cambia el mensaje
@@ -1301,13 +1304,90 @@ export component AppWindow inherits Window {
                         opacity: root.busy ? 0.4 + 0.6 * Math.abs(Math.sin(animation-tick() / 3ms * 1deg)) : 1;
                     }
                 }
-                msg := Text {
-                    text: root.status;
-                    color: root.status-error ? #f38ba8 : Ui.p.text.mix(Ui.p.muted, 0.4);
-                    font-size: 12.5px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    overflow: elide;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-width: 0;
+                    border-radius: 7px;
+                    // un error se puede abrir entero (los largos se recortan con "…")
+                    background: root.status-error && msg-ta.has-hover ? #f38ba8.with-alpha(0.10) : transparent;
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        msg := Text {
+                            text: root.status;
+                            color: root.status-error ? #f38ba8 : Ui.p.text.mix(Ui.p.muted, 0.4);
+                            font-size: 12.5px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                    msg-ta := TouchArea {
+                        enabled: root.status-error;
+                        mouse-cursor: root.status-error ? pointer : default;
+                        clicked => { details.show(); }
+                    }
+                    details := PopupWindow {
+                        x: 0;
+                        y: parent.height + 8px;
+                        width: 460px;
+                        close-policy: close-on-click-outside;
+                        Rectangle {
+                            background: Ui.p.raised;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #f38ba8.with-alpha(0.5);
+                            drop-shadow-blur: 18px;
+                            drop-shadow-color: #00000066;
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 8px;
+                                Text {
+                                    text: Ui.t("Error details", "Detalles del error");
+                                    color: #f38ba8;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.6px;
+                                }
+                                TextInput {
+                                    text: root.status;
+                                    read-only: true;
+                                    single-line: false;
+                                    wrap: word-wrap;
+                                    color: Ui.p.text;
+                                    font-size: 12px;
+                                    selection-background-color: Ui.p.accent.with-alpha(0.45);
+                                }
+                                Text {
+                                    text: Ui.t("Select the text and press Ctrl+C to copy it.", "Selecciona el texto y pulsa Ctrl+C para copiarlo.");
+                                    color: Ui.p.muted;
+                                    font-size: 10.5px;
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.status-action != "" : Rectangle {
+                    height: 24px;
+                    width: act-label.preferred-width + 20px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 12px;
+                    background: act-ta.pressed ? root.status-color.with-alpha(0.32) : act-ta.has-hover ? root.status-color.with-alpha(0.22) : root.status-color.with-alpha(0.13);
+                    border-width: 1px;
+                    border-color: root.status-color.with-alpha(0.55);
+                    animate background { duration: 120ms; }
+                    act-label := Text {
+                        text: root.status-action;
+                        color: root.status-color;
+                        font-size: 11.5px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    act-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.status-act(); }
+                    }
                 }
             }
             states [

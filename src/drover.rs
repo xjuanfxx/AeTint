@@ -233,6 +233,20 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
     let slider_dark = ToneRef { base: 0.0, raised: 0.10, panel: 0.15, label: 176.0 / 255.0, heading: None, frame: None, accent: ADOBE_BLUE };
     let slider_light = ToneRef { base: 0.85, raised: 0.90, panel: 0.95, label: 80.0 / 255.0, heading: None, frame: None, accent: ADOBE_BLUE };
 
+    // Deslizador de brillo (AE 2024): cada color tiene fotogramas en varios puntos y AE mezcla los vecinos, así que
+    // dos grises distintos de la mitad oscura darían un tono intermedio que no es de la paleta. Cada mitad usa el
+    // valor de su extremo (t mínimo en la oscura, máximo en la clara): el color queda fijo en toda la mitad y el
+    // cambio de texto claro/oscuro del punto medio se conserva.
+    let mut anchors: HashMap<(String, bool), (f32, usize)> = HashMap::new();
+    for (i, k) in kfs.iter().enumerate() {
+        let (Some(name), Some(t)) = (get(&k.attrs, "name"), get(&k.attrs, "t").and_then(|t| resolve(&ents, t))) else { continue };
+        let dark = t <= 0.5;
+        let e = anchors.entry((name.to_string(), dark)).or_insert((t, i));
+        if (dark && t < e.0) || (!dark && t > e.0) {
+            *e = (t, i);
+        }
+    }
+
     let mut out = String::with_capacity(s.len());
     let mut last = 0;
     let mut changed = 0;
@@ -257,13 +271,21 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
                 None => continue,
             }
         };
-        let Some(v) = get(&k.attrs, "v").and_then(|v| resolve(&ents, v)) else { continue };
-        let sat = get(&k.attrs, "s").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
-        let h = get(&k.attrs, "h").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
         // veladuras (alfa < 1): se dejan
         if get(&k.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
             continue;
         }
+        // el color de este fotograma: el del extremo de su mitad del deslizador (si lo hay)
+        let src = match slider {
+            Some(t) => anchors.get(&(name.to_string(), t <= 0.5)).map_or(k, |&(_, i)| &kfs[i]),
+            None => k,
+        };
+        if src.attrs.iter().any(|(key, _)| key == "a") && get(&src.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
+            continue;
+        }
+        let Some(v) = get(&src.attrs, "v").and_then(|v| resolve(&ents, v)) else { continue };
+        let sat = get(&src.attrs, "s").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
+        let h = get(&src.attrs, "h").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
         let n = token(name);
         let new = if sat < 0.04 {
             if keep_grey(&n) || n.contains("shadow") || n.contains("unused") || n.contains("overlay") {

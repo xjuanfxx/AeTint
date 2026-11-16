@@ -1108,7 +1108,7 @@ export component AppWindow inherits Window {
                     }
                     // pantalla de inicio propia: a la derecha, siempre a mano
                     Rectangle {
-                        width: sp-row.preferred-width + 20px;
+                        width: sp-row.preferred-width;
                         border-radius: 7px;
                         background: sp-ta.has-hover ? Ui.p.raised : transparent;
                         border-width: 1px;
@@ -1118,9 +1118,10 @@ export component AppWindow inherits Window {
                             clicked => { root.choose-splash(); }
                         }
                         sp-row := HorizontalLayout {
-                            x: 10px;
+                            // con la × el margen derecho es el mismo que arriba y abajo
+                            padding-left: 10px;
+                            padding-right: root.splash-name != "" ? 4px : 10px;
                             spacing: 7px;
-                            alignment: start;
                             if root.splash-name != "": VerticalLayout {
                                 alignment: center;
                                 Rectangle {
@@ -1161,7 +1162,17 @@ export component AppWindow inherits Window {
                                     height: 18px;
                                     border-radius: 5px;
                                     background: cs-ta.has-hover ? Ui.p.frame : transparent;
-                                    Text { text: "×"; color: Ui.p.muted; font-size: 14px; }
+                                    // X dibujada: centrada de verdad (el carácter "×" queda desplazado)
+                                    Path {
+                                        width: 8px;
+                                        height: 8px;
+                                        viewbox-width: 8;
+                                        viewbox-height: 8;
+                                        stroke: cs-ta.has-hover ? Ui.p.text : Ui.p.muted;
+                                        stroke-width: 1.3px;
+                                        fill: transparent;
+                                        commands: "M 0.5 0.5 L 7.5 7.5 M 7.5 0.5 L 0.5 7.5";
+                                    }
                                     cs-ta := TouchArea {
                                         mouse-cursor: pointer;
                                         clicked => { root.clear-splash(); }

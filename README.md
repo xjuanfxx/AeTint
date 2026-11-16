@@ -36,7 +36,7 @@
 - **Dark and light.** Every theme has a **Dark** palette (AE's *Darkest* and *Dark*) and a **Light** palette (AE's *Light*). Switch brightness in AE and the menus and title bar follow live.
 - **Presets** with both versions: Catppuccin Mocha / Latte, Tokyo Night / Day, Rosé Pine / Dawn, Nord / Snow Storm, Gruvbox dark / light, Graphite, and AE's own colours.
 - **My themes** — save your palettes (including hand-picked timeline colours) and switch with one click. **Export** one as a `.aetint` file to share it; whoever gets it double-clicks the file (or uses **Import…**) and it opens in AeTint.
-- **Your own splash screen** — press **Splash** (next to the theme tabs), pick a PNG or JPG and **Apply theme** puts it on After Effects' start-up screen. Adobe's layout stays: your image takes the artwork side and the panel and logo follow your palette. It's written into the three splash sizes in place, so **Restore** undoes it like everything else.
+- **Your own splash screen** *(experimental)* — press **Splash** (next to the theme tabs), pick a PNG or JPG and **Apply theme** puts it on After Effects' start-up screen. Adobe's layout stays: your image takes the artwork side and the panel and logo follow your palette. It's written into the three splash sizes in place, so **Restore** undoes it like everything else.
 - **Timeline overrides** for the navigator, work area, playhead, selected layer and keyframe.
 - **Live preview** of After Effects inside the app.
 - **Menus that actually match**: menu bar, dropdowns, multi-column menus like *Effect*, borders, separators, hover and the title bar.

@@ -674,6 +674,8 @@ export component AppWindow inherits Window {
     }
     in-out property <bool> menus;
     in-out property <bool> autostart;
+    in-out property <bool> sounds: true;
+    callback toggle-sounds(bool);
 
     callback toggle-target(string, bool);
     callback set-palette(string, string);
@@ -737,11 +739,11 @@ export component AppWindow inherits Window {
         }
     }
 
-    // contenido con ancho máximo, centrado en pantallas grandes (maximizado)
+    // contenido a todo el ancho; solo en pantallas muy grandes se limita y se centra
     Rectangle {
-    x: max(0px, (root.width - 1600px) / 2);
+    x: max(0px, (root.width - 2560px) / 2);
     y: 0;
-    width: min(root.width, 1600px);
+    width: min(root.width, 2560px);
     height: root.height;
     VerticalLayout {
         padding: 16px;
@@ -753,7 +755,7 @@ export component AppWindow inherits Window {
             height: 44px;
             spacing: 12px;
             // sitio para los botones de ventana, que van pegados al borde de la ventana
-            padding-right: root.is-max ? 0px : 138px;
+            padding-right: root.width > 2560px ? 0px : 138px;
             VerticalLayout { alignment: center; Logo { size: 40px; } }
             VerticalLayout {
                 alignment: center;
@@ -1164,6 +1166,28 @@ export component AppWindow inherits Window {
                             clicked => {
                                 if (k == 0) { root.toggle-menus(!root.menus); } else { root.toggle-autostart(!root.autostart); }
                             }
+                        }
+                    }
+                    Rectangle { height: 4px; }
+                    Cap { text: "APP"; }
+                    Rectangle {
+                        height: 32px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 4px;
+                            Text {
+                                text: Ui.t("Sound when it's done or fails", "Sonido al terminar o si falla");
+                                color: Ui.p.text;
+                                font-size: 12px;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            VerticalLayout { alignment: center; Switch { on: root.sounds; } }
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-sounds(!root.sounds); }
                         }
                     }
                     Rectangle { vertical-stretch: 1; }

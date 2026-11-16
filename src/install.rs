@@ -170,15 +170,22 @@ pub struct Config {
     /// Idioma de la interfaz: "en" (por defecto) o "es".
     #[serde(default = "default_lang")]
     pub lang: String,
+    /// Sonido al terminar de aplicar o restaurar.
+    #[serde(default = "yes")]
+    pub sounds: bool,
 }
 
 fn default_lang() -> String {
     "en".into()
 }
 
+fn yes() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
-        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: false, lang: default_lang() }
+        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: false, lang: default_lang(), sounds: true }
     }
 }
 

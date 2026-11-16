@@ -15,6 +15,7 @@ mod jsonfit;
 mod menus;
 mod pe;
 mod remap;
+mod sound;
 mod update;
 mod uxp;
 
@@ -393,6 +394,9 @@ fn run_job(ui: &AppWindow, app: &Rc<RefCell<App>>, restore: bool) {
     let all = app.borrow().targets.clone();
     std::thread::spawn(move || {
         let r = if restore { install::restore(&targets) } else { install::apply(&targets, &cfg) };
+        if cfg.sounds {
+            sound::play(if r.is_ok() { sound::Sound::Done } else { sound::Sound::Error });
+        }
         let _ = weak.upgrade_in_event_loop(move |ui| {
             ui.set_busy(false);
             match r {
@@ -663,6 +667,19 @@ fn main() -> Result<(), slint::PlatformError> {
             changed();
         }
     });
+    ui.on_toggle_sounds({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move |on| {
+            app.borrow_mut().cfg.sounds = on;
+            install::save_config(&app.borrow().cfg);
+            if let Some(ui) = weak.upgrade() {
+                ui.set_sounds(on);
+            }
+            if on {
+                sound::play(sound::Sound::Done);
+            }
+        }
+    });
     ui.on_toggle_autostart({
         let weak = ui.as_weak();
         move |on| {
@@ -698,8 +715,12 @@ fn main() -> Result<(), slint::PlatformError> {
         let (app, weak) = (app.clone(), ui.as_weak());
         move || {
             if let Some(ui) = weak.upgrade() {
-                let again = if ui.get_status_error() { app.borrow().last_restore } else { None };
-                run_job(&ui, &app, again.unwrap_or(false));
+                if ui.get_status_error() {
+                    let again = app.borrow().last_restore.unwrap_or(false);
+                    run_job(&ui, &app, again);
+                } else {
+                    run_job(&ui, &app, false);
+                }
             }
         }
     });
@@ -867,6 +888,7 @@ fn main() -> Result<(), slint::PlatformError> {
     refresh(&ui, &app.borrow());
     ui.set_menus(app.borrow().cfg.menus);
     ui.set_autostart(menus::autostart_enabled());
+    ui.set_sounds(app.borrow().cfg.sounds);
     if app.borrow().cfg.menus {
         let _ = menus::write_colors(&app.borrow().cfg.palette, &app.borrow().cfg.light, menus_on(&app.borrow().cfg));
         if !install::all_have_plugin(&app.borrow().targets) {

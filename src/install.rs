@@ -194,6 +194,47 @@ pub fn data_dir() -> PathBuf {
     base.join("AeTint")
 }
 
+/// Registro de AeTint (%LOCALAPPDATA%\AeTintetint.log): cada aplicación o restauración y su resultado,
+/// con el error completo. Es lo que se abre al pulsar un error en el aviso de estado.
+pub fn log_path() -> PathBuf {
+    data_dir().join("aetint.log")
+}
+
+pub fn log_event(msg: &str) {
+    let p = log_path();
+    let _ = fs::create_dir_all(data_dir());
+    // no crece sin límite: pasado 1 MB se queda la mitad más reciente
+    if let Ok(m) = fs::metadata(&p) {
+        if m.len() > 1_000_000 {
+            if let Ok(old) = fs::read(&p) {
+                let keep = &old[old.len() / 2..];
+                let start = keep.iter().position(|&c| c == 10).map_or(0, |i| i + 1);
+                let _ = fs::write(&p, &keep[start..]);
+            }
+        }
+    }
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&p) {
+        let _ = writeln!(f, "[{}] {msg}", now_utc());
+    }
+}
+
+/// Fecha y hora UTC "AAAA-MM-DD HH:MM:SS" (sin dependencias).
+fn now_utc() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let (days, secs) = (t.div_euclid(86_400), t.rem_euclid(86_400));
+    // días desde 1970-01-01 → fecha civil (algoritmo de Howard Hinnant)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} UTC", secs / 3600, secs / 60 % 60, secs % 60)
+}
+
 fn load<T: for<'a> Deserialize<'a> + Default>(name: &str) -> T {
     fs::read(data_dir().join(name)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }

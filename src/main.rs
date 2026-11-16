@@ -150,15 +150,6 @@ impl App {
     fn selected(&self) -> Vec<Target> {
         self.targets.iter().filter(|t| self.cfg.selected.contains(&t.id)).cloned().collect()
     }
-
-    /// ¿Alguna versión marcada no tiene instalado el tema que se está editando?
-    fn pending(&self) -> bool {
-        let st = install::load_state();
-        self.selected().iter().any(|t| match st.applied.get(&t.id) {
-            Some(a) => a.palette != self.cfg.palette || a.light.as_ref() != Some(&self.cfg.light) || a.overrides != self.cfg.overrides,
-            None => true,
-        })
-    }
 }
 
 /// El botón del aviso de estado: "Retry" tras un error, "Apply" si hay cambios sin aplicar.
@@ -167,8 +158,6 @@ fn status_action(ui: &AppWindow, app: &App) {
         ""
     } else if ui.get_status_error() && app.last_restore.is_some() {
         t("Retry", "Reintentar")
-    } else if !app.selected().is_empty() && app.pending() {
-        t("Apply", "Aplicar")
     } else {
         ""
     };
@@ -395,8 +384,14 @@ fn run_job(ui: &AppWindow, app: &Rc<RefCell<App>>, restore: bool) {
     ui.set_status(if restore { t("Restoring…", "Restaurando…") } else { t("Applying…", "Aplicando…") }.into());
     let weak = ui.as_weak();
     let all = app.borrow().targets.clone();
+    let names: Vec<String> = targets.iter().map(|t| t.label.clone()).collect();
+    install::log_event(&format!("{} → {}", if restore { "Restore" } else { "Apply" }, names.join(", ")));
     std::thread::spawn(move || {
         let r = if restore { install::restore(&targets) } else { install::apply(&targets, &cfg) };
+        match &r {
+            Ok(m) => install::log_event(&format!("  ok: {m}")),
+            Err(e) => install::log_event(&format!("  ERROR: {e}")),
+        }
         if cfg.sounds {
             sound::play(if r.is_ok() { sound::Sound::Done } else { sound::Sound::Error });
         }
@@ -712,6 +707,14 @@ fn main() -> Result<(), slint::PlatformError> {
                 run_job(&ui, &app, true);
             }
         }
+    });
+    // pulsar un error abre el registro completo
+    ui.on_open_log(|| {
+        let p = install::log_path();
+        if !p.is_file() {
+            install::log_event("(log created)");
+        }
+        let _ = std::process::Command::new("explorer").arg(&p).spawn();
     });
     // el botón del aviso de estado: repite la última tarea tras un error, o aplica los cambios
     ui.on_status_act({

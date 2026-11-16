@@ -694,6 +694,9 @@ export component AppWindow inherits Window {
     // versión actual y, si hay una más nueva en GitHub, su número
     in property <string> app-version;
     in property <string> update-version;
+    // descarga de la actualización en curso (0..1)
+    in property <bool> update-busy;
+    in property <float> update-progress;
     callback open-update();
     property <int> lib-tab: 0;
     callback start-drag();
@@ -775,7 +778,15 @@ export component AppWindow inherits Window {
                             height: 20px;
                             width: upd-row.preferred-width + 20px;
                             border-radius: 10px;
-                            background: upd-ta.has-hover ? Ui.p.accent.brighter(0.12) : Ui.p.accent;
+                            background: upd-ta.has-hover && !root.update-busy ? Ui.p.accent.brighter(0.12) : Ui.p.accent;
+                            clip: true;
+                            // relleno de progreso mientras se descarga
+                            Rectangle {
+                                x: 0;
+                                width: root.update-busy ? parent.width * root.update-progress : 0;
+                                background: Ui.p.on-accent.with-alpha(0.22);
+                                animate width { duration: 150ms; }
+                            }
                             upd-row := HorizontalLayout {
                                 x: 10px;
                                 spacing: 5px;
@@ -791,7 +802,9 @@ export component AppWindow inherits Window {
                                     }
                                 }
                                 Text {
-                                    text: Ui.t("Update", "Actualizar") + " v" + root.update-version;
+                                    text: !root.update-busy ? Ui.t("Update", "Actualizar") + " v" + root.update-version
+                                        : root.update-progress < 1 ? Ui.t("Downloading", "Descargando") + " " + Math.round(root.update-progress * 100) + "%"
+                                        : Ui.t("Installing…", "Instalando…");
                                     color: Ui.p.on-accent;
                                     font-family: "Archivo Expanded";
                                     font-size: 9.5px;
@@ -800,7 +813,7 @@ export component AppWindow inherits Window {
                                 }
                             }
                             upd-ta := TouchArea {
-                                mouse-cursor: pointer;
+                                mouse-cursor: root.update-busy ? default : pointer;
                                 clicked => { root.open-update(); }
                             }
                         }

@@ -145,9 +145,24 @@ fn install(o: &Opts, es: bool, report: &Report) -> Result<String, String> {
     report(0.05, t(es, "Closing AeTint…", "Cerrando AeTint…"));
     stop_installed_aetint(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // restos de una actualización anterior (DLL que After Effects tenía en uso)
+    for (name, _) in PAYLOAD {
+        let _ = std::fs::remove_file(dir.join(format!("{name}.old")));
+    }
     for (i, (name, bytes)) in PAYLOAD.iter().enumerate() {
         report(0.15 + 0.15 * i as f32, format!("{} {name}…", t(es, "Copying", "Copiando")));
-        std::fs::write(dir.join(name), bytes).map_err(|e| {
+        let dst = dir.join(name);
+        let mut r = std::fs::write(&dst, bytes);
+        // en uso (After Effects tiene cargada la DLL de menús): Windows deja renombrarla; AE seguirá con la
+        // vieja hasta reiniciarse y la nueva queda en su sitio
+        if r.as_ref().is_err_and(|e| e.raw_os_error() == Some(32) || e.raw_os_error() == Some(5)) {
+            let old = dir.join(format!("{name}.old"));
+            let _ = std::fs::remove_file(&old);
+            if std::fs::rename(&dst, &old).is_ok() {
+                r = std::fs::write(&dst, bytes);
+            }
+        }
+        r.map_err(|e| {
             if e.raw_os_error() == Some(32) {
                 t(es, &format!("{name} is in use. Close After Effects and try again."), &format!("{name} está en uso. Cierra After Effects y vuelve a intentarlo."))
             } else {
@@ -231,6 +246,7 @@ fn uninstall(o: &Opts, es: bool, report: &Report) -> Result<String, String> {
     report(0.9, t(es, "Removing files…", "Quitando archivos…"));
     for (name, _) in PAYLOAD {
         let _ = std::fs::remove_file(dir.join(name));
+        let _ = std::fs::remove_file(dir.join(format!("{name}.old")));
     }
     report(1.0, String::new());
     Ok(if restored {
@@ -256,6 +272,8 @@ fn delete_install_dir_after_exit() {
 
 fn main() -> Result<(), slint::PlatformError> {
     let uninstall_mode = std::env::args().any(|a| a == "--uninstall");
+    // lanzado por AeTint para actualizarse: instala sin preguntar y vuelve a abrir AeTint
+    let update_mode = !uninstall_mode && std::env::args().any(|a| a == "--update");
     let es = spanish();
     let ui = SetupWindow::new()?;
     ui.global::<L>().set_es(es);
@@ -264,6 +282,12 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_install_dir(install_dir().display().to_string().into());
     ui.set_updating(!uninstall_mode && install_dir().join("AeTint.exe").is_file());
     ui.set_payload_ok(PAYLOAD.iter().all(|(_, b)| !b.is_empty()));
+    if update_mode {
+        // se conservan los accesos directos que ya había
+        ui.set_opt_start_menu(start_menu_lnk().is_file());
+        ui.set_opt_desktop(desktop_lnk().is_file());
+        ui.set_opt_launch(true);
+    }
 
     {
         use slint::winit_030::{winit, WinitWindowAccessor};
@@ -314,6 +338,15 @@ fn main() -> Result<(), slint::PlatformError> {
                         Ok(m) => {
                             ui.set_status(m.into());
                             ui.set_stage(2);
+                            // actualización: abrir AeTint y cerrar solo
+                            if update_mode {
+                                let w = ui.as_weak();
+                                slint::Timer::single_shot(std::time::Duration::from_millis(700), move || {
+                                    if let Some(ui) = w.upgrade() {
+                                        ui.invoke_finish();
+                                    }
+                                });
+                            }
                         }
                         Err(e) => {
                             ui.set_status(e.into());
@@ -342,6 +375,14 @@ fn main() -> Result<(), slint::PlatformError> {
     // se muestra, se centra en su monitor y arranca el bucle
     center_window(ui.window(), 640.0, 460.0);
     ui.show()?;
+    if update_mode {
+        let w = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(400), move || {
+            if let Some(ui) = w.upgrade() {
+                ui.invoke_run();
+            }
+        });
+    }
     slint::run_event_loop()
 }
 

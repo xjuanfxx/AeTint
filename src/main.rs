@@ -796,30 +796,77 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_status(SharedString::from(idle_status()));
     scan_status(&ui, targets);
 
-    // ── actualizaciones: la última Release de GitHub, en segundo plano
+    // ── actualizaciones: la última Release de GitHub, en segundo plano; al pulsar el aviso se descarga
+    // el instalador, se comprueba su huella y se actualiza solo
     ui.set_app_version(update::CURRENT.into());
-    let update_url: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+    let pending: Rc<RefCell<Option<update::Update>>> = Rc::new(RefCell::new(None));
     ui.on_open_update({
-        let u = update_url.clone();
-        move || update::open(&u.borrow())
+        let (pending, weak) = (pending.clone(), ui.as_weak());
+        move || {
+            let Some(up) = pending.borrow().clone() else { return };
+            let Some(ui) = weak.upgrade() else { return };
+            if ui.get_update_busy() {
+                return;
+            }
+            // sin instalador publicado (o versión portable antigua): se abre la página de la Release
+            if up.setup_url.is_none() || up.sha_url.is_none() {
+                update::open(&up.url);
+                return;
+            }
+            ui.set_update_busy(true);
+            ui.set_update_progress(0.0);
+            ui.set_status(tr!("Downloading AeTint {}…", "Descargando AeTint {}…", up.version).into());
+            ui.set_status_error(false);
+            ui.set_status_ok(false);
+            let weak = ui.as_weak();
+            std::thread::spawn(move || {
+                let w = weak.clone();
+                let r = update::download(&up, move |p| {
+                    let w = w.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = w.upgrade() {
+                            ui.set_update_progress(p);
+                        }
+                    });
+                })
+                .and_then(|path| update::run_installer(&path));
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = weak.upgrade() else { return };
+                    match r {
+                        // el instalador cierra AeTint y lo vuelve a abrir actualizado
+                        Ok(()) => {
+                            ui.set_update_progress(1.0);
+                            ui.set_status(i18n::t("Installing the update…", "Instalando la actualización…").into());
+                            let _ = slint::quit_event_loop();
+                        }
+                        Err(e) => {
+                            ui.set_update_busy(false);
+                            ui.set_status(e.into());
+                            ui.set_status_error(true);
+                            update::open(&up.url);
+                        }
+                    }
+                });
+            });
+        }
     });
     {
         let weak = ui.as_weak();
-        let u = update_url.clone();
-        let (tx, rx) = std::sync::mpsc::channel::<(String, String)>();
+        let pending = pending.clone();
+        let (tx, rx) = std::sync::mpsc::channel::<update::Update>();
         std::thread::spawn(move || {
             if let Some(up) = update::check() {
-                let _ = tx.send((up.version, up.url));
+                let _ = tx.send(up);
             }
         });
         // el resultado llega a este hilo (el de la interfaz) por un temporizador corto
         let timer = slint::Timer::default();
         timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(500), move || {
-            if let Ok((v, url)) = rx.try_recv() {
-                *u.borrow_mut() = url;
+            if let Ok(up) = rx.try_recv() {
                 if let Some(ui) = weak.upgrade() {
-                    ui.set_update_version(v.into());
+                    ui.set_update_version(up.version.clone().into());
                 }
+                *pending.borrow_mut() = Some(up);
             }
         });
         std::mem::forget(timer);

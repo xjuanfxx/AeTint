@@ -1,3 +1,6 @@
 target/
 *.log
 Microsoft/
+
+/target-dev
+/target-dev2

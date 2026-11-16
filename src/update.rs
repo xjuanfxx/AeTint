@@ -123,3 +123,24 @@ mod tests {
         assert!(!is_newer("garbage", "0.1.0"));
     }
 }
+
+#[cfg(test)]
+mod real {
+    /// Descarga real del instalador de una Release publicada y comprobación de su huella (no lo ejecuta).
+    /// `AETINT_TEST_TAG=v0.2.3 cargo test real_download -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_download() {
+        let tag = std::env::var("AETINT_TEST_TAG").unwrap_or_else(|_| "v0.2.3".into());
+        let base = format!("https://github.com/{}/releases/download/{tag}", super::REPO);
+        let up = super::Update {
+            version: tag.trim_start_matches('v').into(),
+            url: String::new(),
+            setup_url: Some(format!("{base}/AeTint-Setup.exe")),
+            sha_url: Some(format!("{base}/AeTint-Setup.exe.sha256")),
+        };
+        let p = super::download(&up, |_| {}).expect("descarga o huella");
+        println!("descargado y verificado: {} ({} bytes)", p.display(), std::fs::metadata(&p).unwrap().len());
+        let _ = std::fs::remove_file(p);
+    }
+}

@@ -273,8 +273,10 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
                 None => continue,
             }
         };
-        // veladuras (alfa < 1): se dejan
-        if get(&k.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
+        // veladuras (alfa < 1): se dejan, salvo el velo del área de trabajo de la timeline: un gris medio al 15 %
+        // que AE pone encima de la zona de capas; con el gris de Adobe la deja grisácea, con la paleta queda en su tono
+        let wash = token(name).contains("workareawash");
+        if !wash && get(&k.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
             continue;
         }
         // el color de este fotograma: el del extremo de su mitad del deslizador (si lo hay)
@@ -282,14 +284,18 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
             Some(t) => anchors.get(&(name.to_string(), t <= 0.5)).map_or(k, |&(_, i)| &kfs[i]),
             None => k,
         };
-        if src.attrs.iter().any(|(key, _)| key == "a") && get(&src.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
+        if !wash && src.attrs.iter().any(|(key, _)| key == "a") && get(&src.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
             continue;
         }
         let Some(v) = get(&src.attrs, "v").and_then(|v| resolve(&ents, v)) else { continue };
         let sat = get(&src.attrs, "s").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
         let h = get(&src.attrs, "h").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
         let n = token(name);
-        let new = if sat < 0.04 {
+        let new = if wash {
+            // el velo del área de trabajo: entre los marcos y el texto; al 15 % sobre los paneles da el mismo tono
+            // un poco más claro que pinta AE 2025+ en la zona de capas
+            crate::color::mix(p.frame, p.text, 0.25)
+        } else if sat < 0.04 {
             if keep_grey(&n) || n.contains("shadow") || n.contains("unused") || n.contains("overlay") {
                 continue;
             }
@@ -298,6 +304,16 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
             shift_accent(hsv_to_rgb(h, sat, v), tone.accent, p.accent)
         } else {
             continue;
+        };
+        // diagnóstico: AETINT_MARK="clave=#rrggbb,clave=#rrggbb" pinta esas claves (sin "k…Color_") de un color fijo
+        let new = match std::env::var("AETINT_MARK").ok().and_then(|m| {
+            m.split(',').find_map(|kv| {
+                let (k, v) = kv.split_once('=')?;
+                (name.trim_start_matches('&').trim_end_matches(';').ends_with(k.trim())).then(|| crate::color::parse_hex(v.trim())).flatten()
+            })
+        }) {
+            Some(c) if dark => c,
+            _ => new,
         };
         let (nh, ns, nv) = rgb_to_hsv(new);
         let mut tag = String::from("<KeyFrame");

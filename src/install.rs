@@ -330,6 +330,68 @@ pub fn ae_running() -> bool {
     false
 }
 
+/// Desarrollo: abre los DLL de una carpeta y prueba a aplicarles la paleta, contando qué encuentra.
+pub fn probe(dir: &Path, cfg: &Config) {
+    if std::env::var_os("AETINT_PROBE_RES").is_some() {
+        for f in ["dvaui.dll", "AfterFXLib.dll"] {
+            if let Ok(b) = std::fs::read(dir.join(f)) {
+                if let Ok(p) = crate::pe::Pe::parse(&b) {
+                    for r in p.resources(&b) {
+                        let t = r.path.first().map(|k| k.to_string()).unwrap_or_default();
+                        if !matches!(t.as_str(), "JSON" | "CSS" | "XML") { continue; }
+                        let path: Vec<String> = r.path.iter().map(|k| k.to_string()).collect();
+                        println!("  {f} res {} {} bytes @{:#x}", path.join("/"), r.size, r.off);
+                    }
+                }
+            }
+        }
+    }
+    let (Ok(pal), Ok(lpal)) = (cfg.palette.resolve(), cfg.light.resolve()) else { return };
+    match std::fs::read(dir.join("dvaui.dll")) {
+        Err(e) => println!("  dvaui.dll: {e}"),
+        Ok(b) => match Dvaui::open(&b) {
+            Err(e) => println!("  dvaui.dll: {e}"),
+            Ok(d) => {
+                let count = |k: Kind| d.tables.iter().filter(|t| t.kind == k).count();
+                for k in [Kind::Darkest, Kind::Dark, Kind::Light] {
+                    if let Some(t) = d.tone_for(&b, k) {
+                        println!("  tone {k:?}: base {:.0} raised {:.0} panel {:.0} frame {:?}", t.base * 255.0, t.raised * 255.0, t.panel * 255.0, t.frame.map(|f| (f * 255.0).round()));
+                    }
+                }
+                println!("  legacy {}", d.legacy.is_some());
+                println!("  dvaui.dll {}: {} tokens, tables darkest {} dark {} light {}, dna {}, css {}", d.version, d.names.len(), count(Kind::Darkest), count(Kind::Dark), count(Kind::Light), d.dna.is_some(), d.css.len());
+                match d.apply(&b, &pal, Some(&lpal)) {
+                    Ok(n) => { if let Some(o) = std::env::var_os("AETINT_PROBE_OUT") { let _ = std::fs::write(Path::new(&o).join(format!("dvaui-{}.dll", d.version)), &n); } println!("  dvaui apply ok, {} bytes changed, reopen: {:?}", n.iter().zip(&b).filter(|(x, y)| x != y).count(), Dvaui::open(&n).err()) }
+                    Err(e) => println!("  dvaui apply: {e}"),
+                }
+                match std::fs::read(dir.join("AfterFXLib.dll")) {
+                    Err(e) => println!("  AfterFXLib.dll: {e}"),
+                    Ok(a) => match AeLib::open(&a) {
+                        Err(e) => println!("  AfterFXLib.dll: {e}"),
+                        Ok(l) => {
+                            let blocks = l.json(&a).map(|v| v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default());
+                            println!("  AfterFXLib.dll {}: blocks {:?}, original {}", l.version, blocks, l.looks_original(&a));
+                            let mut bl = Vec::new();
+                            for (name, k) in [("darkest", Kind::Darkest), ("dark", Kind::Dark)] {
+                                if let Some(t) = d.tone_for(&b, k) {
+                                    bl.push((name, t, &pal));
+                                }
+                            }
+                            if let Some(t) = d.tone_for(&b, Kind::Light) {
+                                bl.push(("light", t, &lpal));
+                            }
+                            match l.apply(&a, &bl, &cfg.overrides) {
+                                Ok(n) => println!("  aelib apply ok, {} bytes changed", n.iter().zip(&a).filter(|(x, y)| x != y).count()),
+                                Err(e) => println!("  aelib apply: {e}"),
+                            }
+                        }
+                    },
+                }
+            }
+        },
+    }
+}
+
 /// Fabrica los archivos con tema de una instalación (sin escribir nada todavía).
 pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let pal = cfg.palette.resolve()?;

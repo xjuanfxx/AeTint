@@ -413,6 +413,18 @@ fn main() -> Result<(), slint::PlatformError> {
         println!("{r:?}");
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    // desarrollo: analiza los DLL de otras versiones (subcarpetas con dvaui.dll y AfterFXLib.dll)
+    if let Some(i) = args.iter().position(|a| a == "--probe") {
+        let dir = std::path::PathBuf::from(args.get(i + 1).cloned().unwrap_or_else(|| ".".into()));
+        let cfg = install::load_config();
+        let mut dirs: Vec<_> = std::fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+        dirs.sort();
+        for d in dirs {
+            println!("== {}", d.display());
+            install::probe(&d, &cfg);
+        }
+        return Ok(());
+    }
     // modo prueba: fabrica los archivos con tema en una carpeta, sin instalar nada
     if let Some(i) = args.iter().position(|a| a == "--dry-run") {
         let out = std::path::PathBuf::from(args.get(i + 1).cloned().unwrap_or_else(|| "dry-run".into()));

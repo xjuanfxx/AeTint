@@ -45,8 +45,48 @@ pub struct Dvaui {
     pub names: Vec<String>,
     pub tables: Vec<Table>,
     pub version: String,
-    dna: Option<Resource>,
-    css: Vec<Resource>,
+    pub dna: Option<Resource>,
+    pub css: Vec<Resource>,
+    /// AE 2023/2024: los colores van en recursos JSON (texto "rgb(…)") en vez de tablas de float.
+    pub legacy: Option<Legacy>,
+}
+
+/// Formato anterior a 2025: "DROVER" (colorThemes.light/dark/darkest), "DNA-VARS-REDUCED" (light/dark/darkest)
+/// y "VARIABLES" (tokens con sets por brillo).
+pub struct Legacy {
+    pub drover: Resource,
+    pub reduced: Option<Resource>,
+    pub variables: Option<Resource>,
+    pub tones: Vec<(Kind, ToneRef)>,
+}
+
+const BLOCKS: [(&str, Kind); 3] = [("darkest", Kind::Darkest), ("dark", Kind::Dark), ("light", Kind::Light)];
+
+fn res_json(b: &[u8], r: &Resource) -> Option<Value> {
+    let s = String::from_utf8_lossy(&b[r.off..r.off + r.size]);
+    serde_json::from_str(s.trim_start_matches('\u{feff}').trim_end_matches(['\0', ' ', '\n', '\r', '\t'])).ok()
+}
+
+/// Los grises de referencia de un bloque de colorThemes (formato 2023/2024).
+fn legacy_tone(m: &serde_json::Map<String, Value>, kind: Kind) -> Option<ToneRef> {
+    let c = |n: &str| m.get(n).and_then(Value::as_str).and_then(color::parse_css).map(|x| x.0);
+    let g = |n: &str| c(n).filter(|x| color::is_grey(*x)).map(|x| x[0]);
+    // en los oscuros, los "background-*" de 2023/2024 no son los fondos que usa AE; la escala de grises sí
+    // coincide con las tablas de 2025 (gray-50 fondo, gray-75 elevado, gray-100 paneles)
+    let (base, raised, panel) = if kind == Kind::Light {
+        (g("background-base-color")?, g("background-layer-1-color")?, g("background-layer-2-color")?)
+    } else {
+        (g("gray-50")?, g("gray-75")?, g("gray-100")?)
+    };
+    Some(ToneRef {
+        base,
+        panel,
+        raised,
+        label: if kind == Kind::Light { 80.0 / 255.0 } else { 176.0 / 255.0 },
+        heading: g("heading-color"),
+        frame: g(FRAME),
+        accent: c("accent-background-color-default")?,
+    })
 }
 
 fn cstr(b: &[u8], o: usize) -> Option<&str> {
@@ -76,7 +116,10 @@ impl Dvaui {
 
         // 1. la tabla de nombres
         let key = b"\0background-layer-1-color\0";
-        let at = find(b, key, r0, r1).ok_or("no se encontraron los tokens de color (¿versión anterior a 2025?)")? + 1;
+        let Some(at) = find(b, key, r0, r1) else {
+            return Self::open_legacy(b, &res);
+        };
+        let at = at + 1;
         let va = p.image_base + p.rva(at).ok_or("RVA no válida")? as u64;
         let ptr = va.to_le_bytes();
         let mut q = None;
@@ -138,7 +181,37 @@ impl Dvaui {
             .filter(|r| matches!(r.path.first(), Some(ResKey::Name(t)) if t == "CSS") && matches!(r.path.get(1), Some(ResKey::Name(n)) if n == "SPECTRUM_DARK"))
             .cloned()
             .collect();
-        Ok(Dvaui { names, tables, version: pe::file_version(b, &res), dna, css })
+        Ok(Dvaui { names, tables, version: pe::file_version(b, &res), dna, css, legacy: None })
+    }
+
+    fn open_legacy(b: &[u8], res: &[Resource]) -> Result<Dvaui, String> {
+        let get = |n: &str| res.iter().find(|r| r.is("JSON", n)).cloned();
+        let drover = get("DROVER").ok_or(tr!("no colour tokens found in dvaui.dll (unsupported version)", "no se encontraron los tokens de color en dvaui.dll (versión no compatible)"))?;
+        let j = res_json(b, &drover).ok_or("DROVER: JSON ilegible")?;
+        let mut tones = Vec::new();
+        for (name, kind) in BLOCKS {
+            if let Some(Value::Object(m)) = j["colorThemes"].get(name) {
+                if let Some(t) = legacy_tone(m, kind) {
+                    tones.push((kind, t));
+                }
+            }
+        }
+        if !tones.iter().any(|(k, _)| *k != Kind::Light) {
+            return Err(tr!("no dark tables with the original greys (is a theme already applied?)", "no hay tablas oscuras con los grises originales (¿el archivo ya tiene un tema aplicado?)"));
+        }
+        let css = res
+            .iter()
+            .filter(|r| matches!(r.path.first(), Some(ResKey::Name(t)) if t == "CSS") && matches!(r.path.get(1), Some(ResKey::Name(n)) if n == "SPECTRUM_DARK"))
+            .cloned()
+            .collect();
+        Ok(Dvaui {
+            names: Vec::new(),
+            tables: Vec::new(),
+            version: pe::file_version(b, res),
+            dna: get("DROVER-DNA-VARS"),
+            css,
+            legacy: Some(Legacy { drover, reduced: get("DNA-VARS-REDUCED"), variables: get("VARIABLES"), tones }),
+        })
     }
 
     fn probe(b: &[u8], o: usize, n: usize, ramp: &[usize], ib: usize, il1: usize) -> Option<Kind> {
@@ -191,6 +264,9 @@ impl Dvaui {
 
     /// El tono de referencia para un brillo (el primero de ese tipo).
     pub fn tone_for(&self, b: &[u8], kind: Kind) -> Option<ToneRef> {
+        if let Some(l) = &self.legacy {
+            return l.tones.iter().find(|t| t.0 == kind).map(|t| t.1);
+        }
         self.tables.iter().find(|t| t.kind == kind).map(|t| self.tone(b, t))
     }
 
@@ -221,6 +297,11 @@ impl Dvaui {
                     b[q + k * 4..q + k * 4 + 4].copy_from_slice(&v.clamp(0.0, 1.0).to_le_bytes());
                 }
             }
+        }
+
+        // AE 2023/2024: los mismos cambios sobre los recursos JSON
+        if let Some(l) = &self.legacy {
+            self.apply_legacy(l, orig, &mut b, pal, light)?;
         }
 
         // DROVER-DNA-VARS: los grises opacos de los bloques oscuros
@@ -267,6 +348,89 @@ impl Dvaui {
         }
         pe::fix_checksum(&mut b);
         Ok(b)
+    }
+}
+
+impl Dvaui {
+    /// AE 2023/2024: aplica la paleta a "DROVER", "DNA-VARS-REDUCED" y "VARIABLES" (mismas reglas que las tablas).
+    fn apply_legacy(&self, l: &Legacy, orig: &[u8], b: &mut [u8], pal: &Pal, light: Option<&Pal>) -> Result<(), String> {
+        let maps: Vec<(&str, GreyMap, ToneRef, &Pal)> = BLOCKS
+            .iter()
+            .filter_map(|(name, kind)| {
+                let p = match (kind, light) {
+                    (Kind::Light, Some(lp)) => lp,
+                    (Kind::Light, None) => return None,
+                    _ => pal,
+                };
+                let t = l.tones.iter().find(|t| t.0 == *kind)?.1;
+                Some((*name, GreyMap::new(&t, p), t, p))
+            })
+            .collect();
+        let recolor = |name: &str, s: &mut String, block: &str| {
+            let Some((_, map, tone, p)) = maps.iter().find(|m| m.0 == block) else { return };
+            let Some((c, alpha)) = color::parse_css(s) else { return };
+            // los colores con alfa (< 1) son veladuras: se dejan
+            if alpha.as_deref().is_some_and(|a| a.parse::<f32>().map_or(true, |x| x < 1.0)) {
+                return;
+            }
+            let new = if is_accent(name) && !color::is_grey(c) {
+                shift_accent(c, tone.accent, p.accent)
+            } else if color::is_grey(c) && !keep_grey(name) {
+                map.map((c[0] + c[1] + c[2]) / 3.0)
+            } else {
+                return;
+            };
+            *s = color::css(new, alpha.as_deref());
+        };
+        let mut patch = |r: &Resource, f: &mut dyn FnMut(&mut Value)| -> Result<(), String> {
+            let new = jsonfit::rewrite_same_len(&orig[r.off..r.off + r.size], |v| {
+                f(v);
+                Ok(())
+            })?;
+            b[r.off..r.off + r.size].copy_from_slice(&new);
+            Ok(())
+        };
+        let flat = |v: &mut Value, prefix: &str| {
+            for (block, ..) in &maps {
+                if let Some(Value::Object(m)) = v.get_mut(*block) {
+                    for (k, val) in m.iter_mut() {
+                        if let Value::String(s) = val {
+                            recolor(k.strip_prefix(prefix).unwrap_or(k), s, block);
+                        }
+                    }
+                }
+            }
+        };
+        // DROVER: colorThemes.<brillo>.<token>
+        patch(&l.drover, &mut |v| {
+            if let Some(t) = v.get_mut("colorThemes") {
+                flat(t, "");
+            }
+        })?;
+        // DNA-VARS-REDUCED: <brillo>.spectrum-<componente>-…
+        if let Some(r) = &l.reduced {
+            patch(r, &mut |v| flat(v, "spectrum-"))?;
+        }
+        // VARIABLES: <token>.sets.<brillo>.value (puede anidarse)
+        fn walk(token: &str, v: &mut Value, f: &dyn Fn(&str, &mut String, &str)) {
+            let Some(Value::Object(sets)) = v.get_mut("sets") else { return };
+            for (block, inner) in sets.iter_mut() {
+                if let Some(Value::String(s)) = inner.get_mut("value") {
+                    f(token, s, block);
+                }
+                walk(token, inner, f);
+            }
+        }
+        if let Some(r) = &l.variables {
+            patch(r, &mut |v| {
+                if let Value::Object(m) = v {
+                    for (k, val) in m.iter_mut() {
+                        walk(k, val, &recolor);
+                    }
+                }
+            })?;
+        }
+        Ok(())
     }
 }
 

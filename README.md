@@ -63,7 +63,7 @@ Prefer a portable copy? `AeTint-windows-x64.zip` has the same three files.
 ### Requirements
 
 - Windows 10 or 11
-- After Effects 2026 or 2027 (2025 is very likely to work — same Spectrum UI)
+- After Effects 2023–2027 (2026 and 2027 tested; 2023–2025 checked against their files)
 - [Rust](https://rustup.rs) to build it yourself
 
 ### Build
@@ -146,8 +146,12 @@ Everything is located by name, not by fixed offsets, so different builds work as
 |---|:---:|:---:|:---:|
 | After Effects 2027 | ✅ tested | ✅ tested | ✅ |
 | After Effects 2026 | ✅ tested (26.5) | ✅ tested | ✅ tested |
-| After Effects 2025 | 🟡 very likely | 🟡 very likely | ✅ |
-| 2024 and earlier | ❔ older UI | ❔ | ✅ |
+| After Effects 2025 | 🟡 files checked (25.6) | 🟡 very likely | ✅ |
+| After Effects 2024 | 🟡 files checked (24.6) | ➖ | ✅ |
+| After Effects 2023 | 🟡 files checked (23.6) | ➖ | ✅ |
+| 2022 and earlier | ❔ | ➖ | ✅ |
+
+*Files checked* means AeTint reads and themes that version's `dvaui.dll` and `AfterFXLib.dll` correctly, but it hasn't been tried inside a running copy yet. 2023 and 2024 store their colours as JSON resources instead of binary tables; AeTint handles both formats.
 
 Menus and the title bar belong to Windows, so they work with any version.
 
@@ -248,7 +252,7 @@ Planned, roughly in this order:
 - [ ] **Custom splash screen** — pick an image; AeTint writes the three splash sizes (`AE_SPLASH`, `_AT_3TO2X`, `_AT_2X`) into `AfterFXLib.dll` on *Apply theme*, restorable like everything else.
 - [ ] **A different theme per version** — e.g. one for 2026 and another for 2027.
 - [ ] **Premiere Pro and Media Encoder** — they share `dvaui.dll` and Win32 menus with After Effects.
-- [ ] **More versions** — verify After Effects 2025 and earlier builds.
+- [ ] **More versions** — try 2023–2025 inside After Effects (their files are already supported) and check 2022 and earlier.
 
 Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/issues).
 

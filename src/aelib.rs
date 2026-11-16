@@ -35,7 +35,7 @@ impl AeLib {
     pub fn open(b: &[u8]) -> Result<AeLib, String> {
         let p = Pe::parse(b)?;
         let res = p.resources(b);
-        let r = res.iter().find(|r| r.is("JSON", RES_NAME)).cloned().ok_or("AfterFXLib.dll no tiene la tabla de colores de AE")?;
+        let r = res.iter().find(|r| r.is("JSON", RES_NAME)).cloned().ok_or_else(|| tr!("AfterFXLib.dll has no After Effects colour table", "AfterFXLib.dll no tiene la tabla de colores de AE"))?;
         let xml = if res.iter().any(|x| x.is("XML", crate::drover::MARKER)) {
             crate::drover::RESOURCES.iter().filter_map(|n| res.iter().find(|x| x.is("XML", n)).cloned()).collect()
         } else {
@@ -48,7 +48,7 @@ impl AeLib {
         let t = &b[self.res.off..self.res.off + self.res.size];
         let s = String::from_utf8_lossy(t);
         let s = s.trim_start_matches('\u{feff}').trim_end_matches(['\0', ' ', '\n', '\r', '\t']);
-        serde_json::from_str(s).map_err(|e| format!("JSON de AE ilegible: {e}"))
+        serde_json::from_str(s).map_err(|e| tr!("unreadable After Effects JSON: {}", "JSON de AE ilegible: {}", e))
     }
 
     /// ¿El bloque darkest todavía tiene los grises de Adobe? (fondo de la timeline gris neutro)
@@ -75,7 +75,7 @@ impl AeLib {
                     let Value::String(s) = val else { continue };
                     let short = k.strip_prefix(PREFIX).unwrap_or(k);
                     if let Some(hex) = overrides.get(short) {
-                        let c = color::parse_hex(hex).ok_or_else(|| format!("color no válido para {short}: {hex}"))?;
+                        let c = color::parse_hex(hex).ok_or_else(|| tr!("invalid colour for {}: {}", "color no válido para {}: {}", short, hex))?;
                         let alpha = color::parse_css(s).and_then(|(_, a)| a);
                         *s = color::css(c, alpha.as_deref());
                     } else if let Some(n) = remap_css_grey(s, &map) {

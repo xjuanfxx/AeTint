@@ -65,18 +65,18 @@ pub fn f32le(b: &[u8], o: usize) -> f32 {
 impl Pe {
     pub fn parse(b: &[u8]) -> Result<Pe, String> {
         if b.len() < 0x400 || u16le(b, 0) != 0x5a4d {
-            return Err("no es un archivo PE".into());
+            return Err(tr!("not a PE file", "no es un archivo PE"));
         }
         let e = u32le(b, 0x3c) as usize;
         if e + 0x200 > b.len() || u32le(b, e) != 0x4550 {
-            return Err("no es un archivo PE".into());
+            return Err(tr!("not a PE file", "no es un archivo PE"));
         }
         let machine = u16le(b, e + 4);
         let nsec = u16le(b, e + 6) as usize;
         let opt_size = u16le(b, e + 20) as usize;
         let opt = e + 24;
         if u16le(b, opt) != 0x20b || machine != 0x8664 {
-            return Err("no es un PE de 64 bits".into());
+            return Err(tr!("not a 64-bit PE file", "no es un PE de 64 bits"));
         }
         let image_base = u64le(b, opt + 24);
         let dirs = opt + 112;

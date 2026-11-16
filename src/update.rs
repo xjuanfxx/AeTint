@@ -59,14 +59,14 @@ pub fn download(up: &Update, progress: impl Fn(f32)) -> Result<std::path::PathBu
     };
     let github = |u: &str| u.starts_with("https://github.com/") || u.starts_with("https://objects.githubusercontent.com/");
     if !github(setup) || !github(sha) {
-        return Err("unexpected download address".into());
+        return Err(tr!("unexpected download address", "dirección de descarga inesperada"));
     }
     let agent = format!("AeTint/{CURRENT}");
     let get = |u: &str| ureq::get(u).set("User-Agent", &agent).timeout(std::time::Duration::from_secs(120)).call().map_err(|e| e.to_string());
     let expected = get(sha)?.into_string().map_err(|e| e.to_string())?;
     let expected = expected.split_whitespace().next().unwrap_or("").to_lowercase();
     if expected.len() != 64 {
-        return Err("invalid checksum file".into());
+        return Err(tr!("invalid checksum file", "archivo de comprobación no válido"));
     }
     let resp = get(setup)?;
     let total: Option<usize> = resp.header("Content-Length").and_then(|v| v.parse().ok());

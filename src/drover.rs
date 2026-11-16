@@ -211,7 +211,7 @@ fn tone_of(kfs: &[&Kf], ents: &HashMap<String, String>, dark: bool) -> Option<To
 /// Recolorea un recurso XML de temas. Devuelve el texto nuevo con la misma longitud en bytes.
 /// `shared`: grises de referencia por tema de los recursos ya procesados; se completa con los de este.
 pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap<String, ToneRef>) -> Result<Vec<u8>, String> {
-    let s = std::str::from_utf8(orig).map_err(|_| "tema XML: no es UTF-8".to_string())?;
+    let s = std::str::from_utf8(orig).map_err(|_| tr!("XML theme: not UTF-8", "tema XML: no es UTF-8"))?;
     let ents = entities(s);
     let kfs = keyframes(s);
 
@@ -343,7 +343,7 @@ fn fit(s: String, len: usize) -> Result<Vec<u8>, String> {
         s = t;
     }
     if s.len() > len {
-        return Err(format!("tema XML: el resultado no cabe ({} > {} bytes)", s.len(), len));
+        return Err(tr!("XML theme: the result doesn't fit ({} > {} bytes)", "tema XML: el resultado no cabe ({} > {} bytes)", s.len(), len));
     }
     let mut b = s.into_bytes();
     b.resize(len, b' ');

@@ -62,7 +62,7 @@ pub struct Pal {
 
 impl Palette {
     pub fn resolve(&self) -> Result<Pal, String> {
-        let p = |name: &str, h: &str| color::parse_hex(h).ok_or_else(|| format!("color no válido en «{name}»: {h}"));
+        let p = |name: &str, h: &str| color::parse_hex(h).ok_or_else(|| tr!("invalid colour in “{}”: {}", "color no válido en «{}»: {}", name, h));
         Ok(Pal {
             base: p("fondo", &self.base)?,
             panel: p("paneles", &self.panel)?,

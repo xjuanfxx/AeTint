@@ -348,12 +348,15 @@ fn scan_status(ui: &AppWindow, targets: Vec<Target>) {
                 }
             }
             let s = match (themed, foreign) {
-                (2, _) => i18n::t("AeTint theme", "Tema de AeTint"),
-                (1, _) => i18n::t("AeTint theme (partial)", "Tema de AeTint (parcial)"),
-                (_, true) => i18n::t("Themed by another app", "Con tema de otro programa"),
+                // cortos: caben en la tarjeta con la ventana en su tamaño normal
+                (2, _) => i18n::t("Themed", "Con tema"),
+                (1, _) => i18n::t("Partly themed", "Tema parcial"),
+                (_, true) => i18n::t("Other app's theme", "Tema de otro programa"),
                 _ => i18n::t("Original", "Original"),
             };
-            out.push((t.id.clone(), if ver.is_empty() { s.to_string() } else { format!("{s} · v{ver}") }));
+            // la versión, solo mayor.menor ("26.5.3.9" → "26.5")
+            let short: Vec<&str> = ver.split('.').take(2).collect();
+            out.push((t.id.clone(), if ver.is_empty() { s.to_string() } else { format!("{s} · v{}", short.join(".")) }));
         }
         let _ = weak.upgrade_in_event_loop(move |ui| {
             APP.with(|a| {
@@ -442,7 +445,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // desarrollo: cargar la DLL en un proceso concreto
     if let Some(i) = args.iter().position(|a| a == "--inject") {
         let pid: u32 = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(0);
-        let r = menus::dll_path().ok_or("aetint_menu.dll is missing next to the .exe".to_string()).and_then(|d| menus::inject(pid, &d));
+        let r = menus::dll_path().ok_or_else(|| tr!("aetint_menu.dll is missing next to the .exe", "falta aetint_menu.dll junto al .exe")).and_then(|d| menus::inject(pid, &d));
         println!("{r:?}");
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }

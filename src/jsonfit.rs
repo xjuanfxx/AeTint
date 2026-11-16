@@ -7,15 +7,15 @@
 use serde_json::Value;
 
 pub fn rewrite_same_len(orig: &[u8], f: impl FnOnce(&mut Value) -> Result<(), String>) -> Result<Vec<u8>, String> {
-    let start = orig.iter().position(|&c| c == b'{').ok_or("el recurso no es JSON")?;
-    let end = orig.iter().rposition(|&c| c == b'}').ok_or("el recurso no es JSON")?;
-    let body = std::str::from_utf8(&orig[start..=end]).map_err(|_| "el JSON no es UTF-8")?;
-    let mut v: Value = serde_json::from_str(body).map_err(|e| format!("JSON ilegible: {e}"))?;
+    let start = orig.iter().position(|&c| c == b'{').ok_or_else(|| tr!("the resource isn't JSON", "el recurso no es JSON"))?;
+    let end = orig.iter().rposition(|&c| c == b'}').ok_or_else(|| tr!("the resource isn't JSON", "el recurso no es JSON"))?;
+    let body = std::str::from_utf8(&orig[start..=end]).map_err(|_| tr!("the JSON isn't UTF-8", "el JSON no es UTF-8"))?;
+    let mut v: Value = serde_json::from_str(body).map_err(|e| tr!("unreadable JSON: {}", "JSON ilegible: {}", e))?;
     f(&mut v)?;
     let compact = serde_json::to_string(&v).map_err(|e| e.to_string())?;
     let room = end + 1 - start;
     if compact.len() > room {
-        return Err(format!("el JSON nuevo no cabe ({} > {room} bytes)", compact.len()));
+        return Err(tr!("the new JSON doesn't fit ({} > {} bytes)", "el JSON nuevo no cabe ({} > {} bytes)", compact.len(), room));
     }
     let mut out = Vec::with_capacity(orig.len());
     out.extend_from_slice(&orig[..start]);

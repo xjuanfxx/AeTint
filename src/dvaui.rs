@@ -111,7 +111,7 @@ impl Dvaui {
     pub fn open(b: &[u8]) -> Result<Dvaui, String> {
         let p = Pe::parse(b)?;
         let res = p.resources(b);
-        let rd = p.sec(".rdata").ok_or("dvaui.dll sin .rdata")?;
+        let rd = p.sec(".rdata").ok_or_else(|| tr!("dvaui.dll has no .rdata section", "dvaui.dll sin sección .rdata"))?;
         let (r0, r1) = (rd.raw as usize, (rd.raw + rd.raw_size) as usize);
 
         // 1. la tabla de nombres
@@ -120,7 +120,7 @@ impl Dvaui {
             return Self::open_legacy(b, &res);
         };
         let at = at + 1;
-        let va = p.image_base + p.rva(at).ok_or("RVA no válida")? as u64;
+        let va = p.image_base + p.rva(at).ok_or_else(|| tr!("invalid RVA", "RVA no válida"))? as u64;
         let ptr = va.to_le_bytes();
         let mut q = None;
         let mut i = r0;
@@ -131,7 +131,7 @@ impl Dvaui {
             }
             i += 8;
         }
-        let q = q.ok_or("no se encontró la tabla de nombres")?;
+        let q = q.ok_or_else(|| tr!("colour token name table not found", "no se encontró la tabla de nombres"))?;
         let str_at = |q: usize| -> Option<&str> {
             if q < r0 || q + 8 > r1 {
                 return None;
@@ -187,7 +187,7 @@ impl Dvaui {
     fn open_legacy(b: &[u8], res: &[Resource]) -> Result<Dvaui, String> {
         let get = |n: &str| res.iter().find(|r| r.is("JSON", n)).cloned();
         let drover = get("DROVER").ok_or(tr!("no colour tokens found in dvaui.dll (unsupported version)", "no se encontraron los tokens de color en dvaui.dll (versión no compatible)"))?;
-        let j = res_json(b, &drover).ok_or("DROVER: JSON ilegible")?;
+        let j = res_json(b, &drover).ok_or_else(|| tr!("DROVER: unreadable JSON", "DROVER: JSON ilegible"))?;
         let mut tones = Vec::new();
         for (name, kind) in BLOCKS {
             if let Some(Value::Object(m)) = j["colorThemes"].get(name) {

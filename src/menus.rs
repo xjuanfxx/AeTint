@@ -156,30 +156,30 @@ mod win {
         unsafe {
             let h = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, 0, pid);
             if h.is_null() {
-                return Err(format!("no se pudo abrir el proceso {pid} (error {})", GetLastError()));
+                return Err(tr!("couldn't open process {} (error {})", "no se pudo abrir el proceso {} (error {})", pid, GetLastError()));
             }
             let mem = VirtualAllocEx(h, std::ptr::null(), bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
             if mem.is_null() {
                 CloseHandle(h);
-                return Err("VirtualAllocEx falló".into());
+                return Err(tr!("VirtualAllocEx failed", "VirtualAllocEx falló"));
             }
             let mut written = 0;
             if WriteProcessMemory(h, mem, path.as_ptr() as *const _, bytes, &mut written) == 0 {
                 VirtualFreeEx(h, mem, 0, MEM_RELEASE);
                 CloseHandle(h);
-                return Err("WriteProcessMemory falló".into());
+                return Err(tr!("WriteProcessMemory failed", "WriteProcessMemory falló"));
             }
             let k32 = GetModuleHandleW(wide("kernel32.dll").as_ptr());
             let Some(ll) = GetProcAddress(k32, c"LoadLibraryW".as_ptr() as *const u8) else {
                 CloseHandle(h);
-                return Err("LoadLibraryW no encontrada".into());
+                return Err(tr!("LoadLibraryW not found", "LoadLibraryW no encontrada"));
             };
             let start: LPTHREAD_START_ROUTINE = Some(std::mem::transmute::<_, unsafe extern "system" fn(*mut core::ffi::c_void) -> u32>(ll));
             let th = CreateRemoteThread(h, std::ptr::null(), 0, start, mem, 0, std::ptr::null_mut());
             if th.is_null() {
                 VirtualFreeEx(h, mem, 0, MEM_RELEASE);
                 CloseHandle(h);
-                return Err(format!("CreateRemoteThread falló (error {})", GetLastError()));
+                return Err(tr!("CreateRemoteThread failed (error {})", "CreateRemoteThread falló (error {})", GetLastError()));
             }
             WaitForSingleObject(th, 10_000);
             CloseHandle(th);
@@ -472,7 +472,7 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
         }
         let st = c.creation_flags(0x0800_0000).status().map_err(|e| e.to_string())?;
         if !st.success() && on {
-            return Err("no se pudo escribir el inicio automático".into());
+            return Err(tr!("couldn't set up start with Windows", "no se pudo escribir el inicio automático"));
         }
     }
     Ok(())

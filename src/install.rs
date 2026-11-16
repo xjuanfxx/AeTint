@@ -576,12 +576,16 @@ pub fn probe(dir: &Path, cfg: &Config) {
                                     // AETINT_PROBE_SPLASH=<imagen>: prueba la pantalla de inicio y comprueba que cada PNG se lee
                                     if let Some(img) = std::env::var_os("AETINT_PROBE_SPLASH") {
                                         let res = crate::pe::Pe::parse(&a).map(|p| p.resources(&a)).unwrap_or_default();
-                                        match crate::splash::load(Path::new(&img)).and_then(|im| crate::splash::apply(&mut n, &res, &im)) {
+                                        match crate::splash::load(Path::new(&img)).and_then(|im| crate::splash::apply(&mut n, &res, &im, Some(&pal))) {
                                             Ok(k) => {
                                                 println!("  splash: {k} images written, size {} (same: {})", n.len(), n.len() == a.len());
                                                 for r in res.iter().filter(|r| crate::splash::NAMES.iter().any(|nm| r.is("PNG", nm))) {
                                                     let ok = image::load_from_memory(&n[r.off..r.off + r.size]).map(|i| format!("{}x{}", i.width(), i.height()));
                                                     println!("    {:?} {} bytes: {:?}", r.path.get(1).map(|k| k.to_string()), r.size, ok);
+                                                    if let Some(o) = std::env::var_os("AETINT_PROBE_OUT") {
+                                                        let nm = r.path.get(1).map(|k| k.to_string()).unwrap_or_default();
+                                                        let _ = std::fs::write(Path::new(&o).join(format!("{}-{nm}.png", l.version)), &n[r.off..r.off + r.size]);
+                                                    }
                                                 }
                                             }
                                             Err(e) => println!("  splash: {e}"),
@@ -624,7 +628,7 @@ pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u
     if let Some(sp) = cfg.splash.as_deref().filter(|p| Path::new(p).is_file()) {
         let img = crate::splash::load(Path::new(sp))?;
         let res = crate::pe::Pe::parse(&oa)?.resources(&oa);
-        crate::splash::apply(&mut na, &res, &img)?;
+        crate::splash::apply(&mut na, &res, &img, Some(&pal))?;
         crate::pe::fix_checksum(&mut na);
     }
     let mut out = vec![(t.file(FileKind::Dvaui), nd), (t.file(FileKind::AeLib), na)];

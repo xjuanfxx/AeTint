@@ -147,11 +147,13 @@ Everything is located by name, not by fixed offsets, so different builds work as
 | After Effects 2027 | ✅ tested | ✅ tested | ✅ |
 | After Effects 2026 | ✅ tested (26.5) | ✅ tested | ✅ tested |
 | After Effects 2025 | 🟡 files checked (25.6) | 🟡 very likely | ✅ |
-| After Effects 2024 | 🟡 files checked (24.6) | ➖ | ✅ |
+| After Effects 2024 | ✅ tested (24.6) | ✅ tested | ✅ tested |
 | After Effects 2023 | 🟡 files checked (23.6) | ➖ | ✅ |
 | 2022 and earlier | ❔ | ➖ | ✅ |
 
-*Files checked* means AeTint reads and themes that version's `dvaui.dll` and `AfterFXLib.dll` correctly, but it hasn't been tried inside a running copy yet. 2023 and 2024 store their colours as JSON resources instead of binary tables; AeTint handles both formats.
+*Files checked* means AeTint reads and themes that version's `dvaui.dll` and `AfterFXLib.dll` correctly, but it hasn't been tried inside a running copy yet.
+
+After Effects 2024 and earlier still use Adobe's older interface: most of its colours live in XML themes inside `AfterFXLib.dll` (with a brightness slider instead of three modes), and its Home screen is the copy shared with other Adobe apps in `Common Files` (Photoshop, Illustrator or Premiere use it too when it's newer than their own, so it would follow your After Effects palette). AeTint handles both interfaces.
 
 Menus and the title bar belong to Windows, so they work with any version.
 

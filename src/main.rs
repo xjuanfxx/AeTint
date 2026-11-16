@@ -977,7 +977,7 @@ fn main() -> Result<(), slint::PlatformError> {
         std::mem::forget(timer);
     }
     // se muestra, se centra en su monitor y arranca el bucle
-    center_window(ui.window(), 1180.0, 760.0);
+    center_window(ui.window(), 1180.0, 800.0);
     ui.show()?;
     slint::run_event_loop()
 }

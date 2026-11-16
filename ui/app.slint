@@ -639,9 +639,9 @@ export component AppWindow inherits Window {
     no-frame: true;
     icon: @image-url("../assets/icon.png");
     preferred-width: 1180px;
-    preferred-height: 760px;
+    preferred-height: 800px;
     min-width: 1100px;
-    min-height: 740px;
+    min-height: 780px;
     background: Ui.p.base;
     default-font-family: "Inter";
 
@@ -1140,7 +1140,7 @@ export component AppWindow inherits Window {
                     }
 
                     Rectangle { height: 4px; }
-                    Cap { text: Ui.t("MENUS AND TITLE BAR", "MENÚS Y BARRA DE TÍTULO"); }
+                    Cap { text: Ui.t("OPTIONS", "OPCIONES"); }
                     for opt[k] in [
                         { label: Ui.t("Paint File, Edit… and the title bar", "Pintar File, Edit… y el título"), on: root.menus },
                         { label: Ui.t("Start with Windows", "Activar al iniciar Windows"), on: root.autostart },
@@ -1168,8 +1168,6 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    Rectangle { height: 4px; }
-                    Cap { text: "APP"; }
                     Rectangle {
                         height: 32px;
                         HorizontalLayout {

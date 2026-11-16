@@ -157,10 +157,11 @@ component WinBtn inherits Rectangle {
 }
 
 component Cap inherits Text {
-    color: Ui.p.text;
+    color: Ui.p.muted;
     font-family: "Archivo Expanded";
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
+    letter-spacing: 1.4px;
 }
 
 // Logo: gota (el tinte) con una mini timeline dentro: tres capas y el cabezal.
@@ -553,8 +554,9 @@ component Seg inherits Rectangle {
                 text: it;
                 color: k == root.current ? Ui.p.text : Ui.p.muted;
                 font-family: "Archivo Expanded";
-                font-size: 10px;
-                font-weight: k == root.current ? 800 : 600;
+                font-size: 9.5px;
+                font-weight: 800;
+                letter-spacing: 0.8px;
             }
             sta := TouchArea {
                 mouse-cursor: pointer;
@@ -947,7 +949,7 @@ export component AppWindow inherits Window {
                             VerticalLayout {
                                 padding: 8px;
                                 spacing: 2px;
-                                Text { text: Ui.t("Settings", "Ajustes"); color: Ui.p.muted; font-family: "Archivo Expanded"; font-size: 10px; font-weight: 800; height: 24px; vertical-alignment: center; x: 10px; }
+                                Text { text: Ui.t("SETTINGS", "AJUSTES"); color: Ui.p.muted; font-family: "Archivo Expanded"; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; height: 24px; vertical-alignment: center; x: 10px; }
                                 OptRow {
                                     label: Ui.t("Paint File, Edit… and the title bar", "Pintar File, Edit… y el título");
                                     on: root.menus;
@@ -973,7 +975,7 @@ export component AppWindow inherits Window {
                                         VerticalLayout {
                                             alignment: center;
                                             Seg {
-                                                items: ["English", "Español"];
+                                                items: ["ENGLISH", "ESPAÑOL"];
                                                 current: Ui.es ? 1 : 0;
                                                 picked(k) => { root.set-lang(k == 1); }
                                             }
@@ -1002,7 +1004,7 @@ export component AppWindow inherits Window {
                     spacing: 12px;
                     height: 26px;
                     Seg {
-                        items: [Ui.t("Presets", "Presets"), Ui.t("My themes", "Mis temas") + (root.themes.length > 0 ? " · " + root.themes.length : "")];
+                        items: [Ui.t("PRESETS", "PRESETS"), Ui.t("MY THEMES", "MIS TEMAS") + (root.themes.length > 0 ? " · " + root.themes.length : "")];
                         current: root.lib-tab;
                         picked(k) => { root.lib-tab = k; }
                     }
@@ -1108,9 +1110,9 @@ export component AppWindow inherits Window {
                         spacing: 6px;
                         HorizontalLayout {
                             height: 26px;
-                            Cap { text: Ui.t("Colours", "Colores"); vertical-alignment: center; horizontal-stretch: 1; }
+                            Cap { text: Ui.t("COLOURS", "COLORES"); vertical-alignment: center; horizontal-stretch: 1; }
                             Seg {
-                                items: [Ui.t("Dark", "Oscuro"), Ui.t("Light", "Claro")];
+                                items: [Ui.t("DARK", "OSCURO"), Ui.t("LIGHT", "CLARO")];
                                 current: root.edit-light ? 1 : 0;
                                 picked(k) => { root.set-edit-light(k == 1); }
                             }
@@ -1131,7 +1133,7 @@ export component AppWindow inherits Window {
                         spacing: 4px;
                         HorizontalLayout {
                             height: 22px;
-                            Cap { text: "Timeline"; vertical-alignment: center; }
+                            Cap { text: "TIMELINE"; vertical-alignment: center; }
                         }
                         Text {
                             text: Ui.t("Tick a colour to set it by hand.", "Marca un color para fijarlo a mano.");
@@ -1153,7 +1155,7 @@ export component AppWindow inherits Window {
                     VerticalLayout {
                         padding: 14px;
                         spacing: 8px;
-                        Cap { text: Ui.t("Install to", "Instalar en"); }
+                        Cap { text: Ui.t("INSTALL TO", "INSTALAR EN"); }
                         if root.targets.length == 0: Text {
                             text: Ui.t("After Effects wasn't found in Program Files.", "No se encontró After Effects en Program Files.");
                             color: Ui.p.muted;

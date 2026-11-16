@@ -16,6 +16,8 @@ mod menus;
 mod pe;
 mod remap;
 mod sound;
+mod splash;
+mod dialog;
 mod update;
 mod uxp;
 
@@ -192,6 +194,73 @@ fn menus_on(cfg: &Config) -> bool {
 
 fn idle_status() -> &'static str {
     t("Pick your colours and press Apply. After Effects must be closed.", "Elige colores y pulsa Aplicar. After Effects debe estar cerrado.")
+}
+
+/// Importa un archivo .aetint: lo añade a "My themes" (o reemplaza el del mismo nombre) y lo carga.
+fn import_file(ui: &AppWindow, app: &Rc<RefCell<App>>, changed: &dyn Fn(), path: &std::path::Path) {
+    match install::import_theme(path) {
+        Ok(t) => {
+            {
+                let mut a = app.borrow_mut();
+                match a.themes.iter_mut().find(|x| x.name == t.name) {
+                    Some(x) => *x = t.clone(),
+                    None => a.themes.push(t.clone()),
+                }
+                install::save_themes(&a.themes);
+                a.cfg.palette = t.palette.clone();
+                if let Some(l) = t.light.clone() {
+                    a.cfg.light = l;
+                }
+                a.cfg.overrides = t.overrides.clone();
+                ui.set_themes(theme_items(&a.themes, a.edit_light));
+            }
+            changed();
+            ui.set_lib_tab(1);
+            ui.set_status(tr!("Imported “{}”. Press Apply theme to use it in After Effects.", "“{}” importado. Pulsa Aplicar tema para usarlo en After Effects.", t.name).into());
+            ui.set_status_error(false);
+            ui.set_status_ok(true);
+        }
+        Err(e) => {
+            install::log_event(&format!("Import {} → ERROR: {e}", path.display()));
+            ui.set_status(e.into());
+            ui.set_status_error(true);
+            ui.set_status_ok(false);
+        }
+    }
+}
+
+/// Doble clic en un .aetint abre AeTint: asociación en HKCU (sin permisos), solo desde una instalación real.
+fn register_theme_files() {
+    #[cfg(windows)]
+    std::thread::spawn(|| {
+        use std::os::windows::process::CommandExt;
+        let Ok(exe) = std::env::current_exe() else { return };
+        let exe_s = exe.display().to_string();
+        if exe_s.to_lowercase().contains("\target") {
+            return; // compilaciones de desarrollo
+        }
+        let cmd = format!("\"{exe_s}\" \"%1\"");
+        let key = r"HKCU\Software\Classes\AeTint.Theme\shell\open\command";
+        let cur = std::process::Command::new("reg").args(["query", key, "/ve"]).creation_flags(0x0800_0000).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+        if cur.contains(&cmd) {
+            return;
+        }
+        let add = |k: &str, v: &str| {
+            let _ = std::process::Command::new("reg").args(["add", k, "/ve", "/d", v, "/f"]).creation_flags(0x0800_0000).status();
+        };
+        add(r"HKCU\Software\Classes\.aetint", "AeTint.Theme");
+        add(r"HKCU\Software\Classes\AeTint.Theme", "AeTint theme");
+        add(r"HKCU\Software\Classes\AeTint.Theme\DefaultIcon", &format!("\"{exe_s}\",0"));
+        add(key, &cmd);
+        unsafe {
+            use windows_sys::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+            SHChangeNotify(SHCNE_ASSOCCHANGED as i32, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
+        }
+    });
+}
+
+fn splash_label(cfg: &Config) -> String {
+    cfg.splash.as_deref().filter(|p| std::path::Path::new(p).is_file()).map(|_| i18n::t("Your image", "Tu imagen").to_string()).unwrap_or_default()
 }
 
 fn theme_items(themes: &[SavedTheme], light: bool) -> ModelRc<PresetItem> {
@@ -880,6 +949,73 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         }
     });
+    ui.on_import_theme({
+        let (app, changed, weak) = (app.clone(), changed.clone(), ui.as_weak());
+        move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(p) = dialog::open(t("Import theme", "Importar tema"), &[(t("AeTint theme", "Tema de AeTint"), "*.aetint")]) {
+                import_file(&ui, &app, &*changed, &p);
+            }
+        }
+    });
+    ui.on_export_theme({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some(th) = app.borrow().themes.get(i as usize).cloned() else { return };
+            let file: String = th.name.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) { '-' } else { c }).collect();
+            let Some(p) = dialog::save(t("Export theme", "Exportar tema"), &[(t("AeTint theme", "Tema de AeTint"), "*.aetint")], &format!("{file}.aetint"), "aetint") else { return };
+            match install::export_theme(&th, &p) {
+                Ok(()) => {
+                    ui.set_status(tr!("Exported “{}”. Double-click the file to open it in AeTint.", "“{}” exportado. Haz doble clic en el archivo para abrirlo en AeTint.", th.name).into());
+                    ui.set_status_error(false);
+                    ui.set_status_ok(true);
+                }
+                Err(e) => {
+                    ui.set_status(e.into());
+                    ui.set_status_error(true);
+                    ui.set_status_ok(false);
+                }
+            }
+        }
+    });
+    ui.on_choose_splash({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some(p) = dialog::open(t("Splash screen image", "Imagen para la pantalla de inicio"), &[(t("Images", "Imágenes"), "*.png;*.jpg;*.jpeg")]) else { return };
+            match install::store_splash(&p) {
+                Ok(stored) => {
+                    let mut a = app.borrow_mut();
+                    a.cfg.splash = Some(stored);
+                    install::save_config(&a.cfg);
+                    ui.set_splash_name(splash_label(&a.cfg).into());
+                    ui.set_status(t("Splash image set. Press Apply theme to put it in After Effects.", "Imagen de inicio elegida. Pulsa Aplicar tema para ponerla en After Effects.").into());
+                    ui.set_status_error(false);
+                    ui.set_status_ok(true);
+                }
+                Err(e) => {
+                    ui.set_status(e.into());
+                    ui.set_status_error(true);
+                    ui.set_status_ok(false);
+                }
+            }
+        }
+    });
+    ui.on_clear_splash({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move || {
+            let mut a = app.borrow_mut();
+            a.cfg.splash = None;
+            install::save_config(&a.cfg);
+            if let Some(ui) = weak.upgrade() {
+                ui.set_splash_name("".into());
+                ui.set_status(t("Adobe's splash again. Press Apply theme to put it back.", "Vuelve el splash de Adobe. Pulsa Aplicar tema para devolverlo.").into());
+                ui.set_status_error(false);
+                ui.set_status_ok(false);
+            }
+        }
+    });
     ui.on_rescan({
         let (app, weak) = (app.clone(), ui.as_weak());
         move || {
@@ -894,6 +1030,12 @@ fn main() -> Result<(), slint::PlatformError> {
     refresh(&ui, &app.borrow());
     ui.set_menus(app.borrow().cfg.menus);
     ui.set_autostart(menus::autostart_enabled());
+    ui.set_splash_name(splash_label(&app.borrow().cfg).into());
+    register_theme_files();
+    // doble clic en un .aetint: AeTint se abre con ese archivo
+    if let Some(p) = std::env::args().skip(1).find(|a| a.to_lowercase().ends_with(".aetint")) {
+        import_file(&ui, &app, &*changed, std::path::Path::new(&p));
+    }
     ui.set_sounds(app.borrow().cfg.sounds);
     if app.borrow().cfg.menus {
         let _ = menus::write_colors(&app.borrow().cfg.palette, &app.borrow().cfg.light, menus_on(&app.borrow().cfg));

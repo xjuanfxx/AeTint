@@ -35,7 +35,8 @@
 - **One palette, everywhere.** Six colours — background, panels, frames, fields, text and accent — drive hundreds of Adobe greys. Each grey lands between your colours by lightness, so every in-between shade follows the palette.
 - **Dark and light.** Every theme has a **Dark** palette (AE's *Darkest* and *Dark*) and a **Light** palette (AE's *Light*). Switch brightness in AE and the menus and title bar follow live.
 - **Presets** with both versions: Catppuccin Mocha / Latte, Tokyo Night / Day, Rosé Pine / Dawn, Nord / Snow Storm, Gruvbox dark / light, Graphite, and AE's own colours.
-- **My themes** — save your palettes (including hand-picked timeline colours) and switch with one click.
+- **My themes** — save your palettes (including hand-picked timeline colours) and switch with one click. **Export** one as a `.aetint` file to share it; whoever gets it double-clicks the file (or uses **Import…**) and it opens in AeTint.
+- **Your own splash screen** — pick a PNG or JPG in **Settings** and **Apply theme** puts it on After Effects' start-up screen. It's cropped to fit and written into the three splash sizes in place, so **Restore** undoes it like everything else.
 - **Timeline overrides** for the navigator, work area, playhead, selected layer and keyframe.
 - **Live preview** of After Effects inside the app.
 - **Menus that actually match**: menu bar, dropdowns, multi-column menus like *Effect*, borders, separators, hover and the title bar.
@@ -218,6 +219,7 @@ After Effects lives in `C:\Program Files`, which only administrators can write t
 | `%LOCALAPPDATA%\AeTint\config.json` | Your palettes, language and options |
 | `%LOCALAPPDATA%\AeTint	hemes.json` | **My themes** |
 | `%LOCALAPPDATA%\AeTint\originals` | Backups of Adobe's original files — needed by **Restore** |
+| `%LOCALAPPDATA%\AeTint\splash.png` / `.jpg` | A copy of the image you picked for the splash screen |
 | `%LOCALAPPDATA%\AeTintetint.log` | What AeTint did each time you applied or restored, with full error messages |
 | `%LOCALAPPDATA%\AeTint\menu.json` | Menu and title bar colours read live by the DLL |
 </details>
@@ -252,11 +254,11 @@ Planned, roughly in this order:
 
 - [ ] **Re-apply after After Effects updates** — detect when an update replaced the themed files and offer a one-click *Reapply* (and a heads-up from inside AE).
 - [ ] **Label colours** — match AE's 16 label colours to the theme, or pick them by hand.
-- [ ] **Export / import themes** — share a theme as a `.aetint` file and open it with a double-click.
-- [ ] **Custom splash screen** — pick an image; AeTint writes the three splash sizes (`AE_SPLASH`, `_AT_3TO2X`, `_AT_2X`) into `AfterFXLib.dll` on *Apply theme*, restorable like everything else.
+- [x] **Export / import themes** — share a theme as a `.aetint` file and open it with a double-click.
+- [x] **Custom splash screen** — pick an image; AeTint writes the three splash sizes (`AE_SPLASH`, `_AT_3TO2X`, `_AT_2X`) into `AfterFXLib.dll` on *Apply theme*, restorable like everything else.
 - [ ] **A different theme per version** — e.g. one for 2026 and another for 2027.
 - [ ] **Premiere Pro and Media Encoder** — they share `dvaui.dll` and Win32 menus with After Effects.
-- [ ] **More versions** — try 2023–2025 inside After Effects (their files are already supported) and check 2022 and earlier.
+- [ ] **More versions** — try 2023 and 2025 inside After Effects (their files are already supported) and check 2022 and earlier.
 
 Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/issues).
 

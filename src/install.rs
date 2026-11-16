@@ -173,6 +173,9 @@ pub struct Config {
     /// Sonido al terminar de aplicar o restaurar.
     #[serde(default = "yes")]
     pub sounds: bool,
+    /// Imagen propia para la pantalla de inicio de AE (copia guardada en %LOCALAPPDATA%\AeTint).
+    #[serde(default)]
+    pub splash: Option<String>,
 }
 
 fn default_lang() -> String {
@@ -185,7 +188,7 @@ fn yes() -> bool {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: false, lang: default_lang(), sounds: true }
+        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: false, lang: default_lang(), sounds: true, splash: None }
     }
 }
 
@@ -260,6 +263,45 @@ pub fn load_themes() -> Vec<SavedTheme> {
 }
 pub fn save_themes(t: &[SavedTheme]) {
     save("themes.json", &t.to_vec())
+}
+
+/// Archivo .aetint: un tema para compartir (el mismo contenido que en "My themes", con versión de formato).
+#[derive(Serialize, Deserialize)]
+struct ThemeFile {
+    aetint: u32,
+    #[serde(flatten)]
+    theme: SavedTheme,
+}
+
+pub fn export_theme(t: &SavedTheme, path: &Path) -> Result<(), String> {
+    let f = ThemeFile { aetint: 1, theme: t.clone() };
+    let json = serde_json::to_vec_pretty(&f).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| tr!("couldn't save {}: {}", "no se pudo guardar {}: {}", path.display(), e))
+}
+
+pub fn import_theme(path: &Path) -> Result<SavedTheme, String> {
+    let b = fs::read(path).map_err(|e| tr!("couldn't read {}: {}", "no se pudo leer {}: {}", path.display(), e))?;
+    let f: ThemeFile = serde_json::from_slice(&b).map_err(|_| tr!("{} isn't an AeTint theme", "{} no es un tema de AeTint", path.display()))?;
+    // los colores tienen que ser válidos
+    f.theme.palette.resolve()?;
+    if let Some(l) = &f.theme.light {
+        l.resolve()?;
+    }
+    let mut t = f.theme;
+    if t.name.trim().is_empty() {
+        t.name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Imported".into());
+    }
+    Ok(t)
+}
+
+/// Guarda una copia de la imagen del splash en la carpeta de datos (así no depende del archivo original).
+pub fn store_splash(src: &Path) -> Result<String, String> {
+    crate::splash::load(src)?;
+    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "png".into());
+    let dst = data_dir().join(format!("splash.{ext}"));
+    let _ = fs::create_dir_all(data_dir());
+    fs::copy(src, &dst).map_err(|e| e.to_string())?;
+    Ok(dst.display().to_string())
 }
 
 pub fn load_config() -> Config {
@@ -486,7 +528,7 @@ pub fn probe(dir: &Path, cfg: &Config) {
                 if let Ok(p) = crate::pe::Pe::parse(&b) {
                     for r in p.resources(&b) {
                         let t = r.path.first().map(|k| k.to_string()).unwrap_or_default();
-                        if !matches!(t.as_str(), "JSON" | "CSS" | "XML") { continue; }
+                        if !matches!(t.as_str(), "JSON" | "CSS" | "XML" | "PNG") { continue; }
                         let path: Vec<String> = r.path.iter().map(|k| k.to_string()).collect();
                         println!("  {f} res {} {} bytes @{:#x}", path.join("/"), r.size, r.off);
                     }
@@ -529,7 +571,23 @@ pub fn probe(dir: &Path, cfg: &Config) {
                                 bl.push(("light", t, &lpal));
                             }
                             match l.apply(&a, &bl, &cfg.overrides) {
-                                Ok(n) => println!("  aelib apply ok, {} bytes changed", n.iter().zip(&a).filter(|(x, y)| x != y).count()),
+                                Ok(mut n) => {
+                                    println!("  aelib apply ok, {} bytes changed", n.iter().zip(&a).filter(|(x, y)| x != y).count());
+                                    // AETINT_PROBE_SPLASH=<imagen>: prueba la pantalla de inicio y comprueba que cada PNG se lee
+                                    if let Some(img) = std::env::var_os("AETINT_PROBE_SPLASH") {
+                                        let res = crate::pe::Pe::parse(&a).map(|p| p.resources(&a)).unwrap_or_default();
+                                        match crate::splash::load(Path::new(&img)).and_then(|im| crate::splash::apply(&mut n, &res, &im)) {
+                                            Ok(k) => {
+                                                println!("  splash: {k} images written, size {} (same: {})", n.len(), n.len() == a.len());
+                                                for r in res.iter().filter(|r| crate::splash::NAMES.iter().any(|nm| r.is("PNG", nm))) {
+                                                    let ok = image::load_from_memory(&n[r.off..r.off + r.size]).map(|i| format!("{}x{}", i.width(), i.height()));
+                                                    println!("    {:?} {} bytes: {:?}", r.path.get(1).map(|k| k.to_string()), r.size, ok);
+                                                }
+                                            }
+                                            Err(e) => println!("  splash: {e}"),
+                                        }
+                                    }
+                                }
                                 Err(e) => println!("  aelib apply: {e}"),
                             }
                         }
@@ -561,7 +619,14 @@ pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u
     if let Some(lt) = light_tone {
         blocks.push(("light", lt, &lpal));
     }
-    let na = a.apply(&oa, &blocks, &cfg.overrides)?;
+    let mut na = a.apply(&oa, &blocks, &cfg.overrides)?;
+    // pantalla de inicio propia
+    if let Some(sp) = cfg.splash.as_deref().filter(|p| Path::new(p).is_file()) {
+        let img = crate::splash::load(Path::new(sp))?;
+        let res = crate::pe::Pe::parse(&oa)?.resources(&oa);
+        crate::splash::apply(&mut na, &res, &img)?;
+        crate::pe::fix_checksum(&mut na);
+    }
     let mut out = vec![(t.file(FileKind::Dvaui), nd), (t.file(FileKind::AeLib), na)];
     // pantalla de inicio (opcional: si esta versión no la tiene o algo falla, se deja como está)
     let darkest = tones.iter().find(|x| x.0 == "darkest").map(|x| x.1);
@@ -833,4 +898,30 @@ fn run_elevated(manifest: &Path) -> Result<(), String> {
 #[cfg(not(windows))]
 fn run_elevated(_: &Path) -> Result<(), String> {
     Err(crate::i18n::t("no write permission", "sin permiso de escritura").into())
+}
+
+#[cfg(test)]
+mod theme_file_tests {
+    use super::*;
+
+    #[test]
+    fn export_then_import_roundtrip() {
+        let t = SavedTheme { name: "Test theme".into(), palette: Palette::default(), light: Some(Palette::light_default()), overrides: BTreeMap::from([("time-ruler-cti-comp".to_string(), "#FF0000".to_string())]) };
+        let p = std::env::temp_dir().join("aetint-roundtrip-test.aetint");
+        export_theme(&t, &p).unwrap();
+        let back = import_theme(&p).unwrap();
+        let _ = fs::remove_file(&p);
+        assert_eq!(back.name, t.name);
+        assert_eq!(back.palette, t.palette);
+        assert_eq!(back.light, t.light);
+        assert_eq!(back.overrides, t.overrides);
+    }
+
+    #[test]
+    fn rejects_files_that_arent_themes() {
+        let p = std::env::temp_dir().join("aetint-not-a-theme.aetint");
+        fs::write(&p, b"{\"hello\": 1}").unwrap();
+        assert!(import_theme(&p).is_err());
+        let _ = fs::remove_file(&p);
+    }
 }

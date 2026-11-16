@@ -227,6 +227,9 @@ fn uninstall(o: &Opts, es: bool, report: &Report) -> Result<String, String> {
     let _ = std::fs::remove_file(desktop_lnk());
     let _ = cmd("reg").args(["delete", UNINSTALL_KEY, "/f"]).status();
     let _ = cmd("reg").args(["delete", RUN_KEY, "/v", "AeTint", "/f"]).status();
+    // asociación de los temas .aetint (la crea AeTint al abrirse)
+    let _ = cmd("reg").args(["delete", r"HKCU\Software\Classes\.aetint", "/f"]).status();
+    let _ = cmd("reg").args(["delete", r"HKCU\Software\Classes\AeTint.Theme", "/f"]).status();
     if o.wipe {
         report(0.75, t(es, "Deleting settings…", "Borrando la configuración…"));
         let d = data_dir();

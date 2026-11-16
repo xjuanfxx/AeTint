@@ -23,9 +23,13 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 # comprobación de actualizaciones (última Release de GitHub)
 ureq = { version = "2", features = ["json"] }
+# pantalla de inicio propia: leer la imagen (PNG/JPG), escalarla y guardarla como PNG
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+png = "0.17"
+color_quant = "1.1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Dwm", "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Media_Audio"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Dwm", "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Media_Audio", "Win32_UI_Controls_Dialogs"] }
 
 [build-dependencies]
 slint-build = "1.16"

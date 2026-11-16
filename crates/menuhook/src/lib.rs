@@ -932,6 +932,7 @@ const MENU_BARBACKGROUND: i32 = 7;
 const MENU_BARITEM: i32 = 8;
 const MENU_POPUPBACKGROUND: i32 = 9;
 const MENU_POPUPBORDERS: i32 = 10;
+const MENU_POPUPCHECKBACKGROUND: i32 = 12;
 const MENU_POPUPGUTTER: i32 = 13;
 const MENU_POPUPITEM: i32 = 14;
 const MENU_POPUPSEPARATOR: i32 = 15;
@@ -1086,6 +1087,9 @@ unsafe extern "system" fn h_bg(th: isize, hdc: HDC, part: i32, state: i32, rc: *
     let orig: FnBg = std::mem::transmute(HOOKS.get().unwrap().bg.as_ref().unwrap().trampoline());
     let Some(c) = colors() else { return orig(th, hdc, part, state, rc, clip) };
     if rc.is_null() || !is_menu_part(part) || !menu_call(th, hdc, part) {
+        if !rc.is_null() && is_menu_part(part) {
+            log(&format!("bg sin reconocer: tema {th:#x} part {part} state {state}"));
+        }
         return orig(th, hdc, part, state, rc, clip);
     }
     let r = *rc;
@@ -1112,6 +1116,8 @@ unsafe extern "system" fn h_bg(th: isize, hdc: HDC, part: i32, state: i32, rc: *
                 fill(hdc, &r, c.popup);
             }
         }
+        // fondo de la casilla de las opciones marcables (✓ Audio…): en Windows 11 ocupa la fila
+        MENU_POPUPCHECKBACKGROUND => fill(hdc, &r, c.popup),
         MENU_POPUPSEPARATOR => {
             fill(hdc, &r, c.popup);
             let mid = (r.top + r.bottom) / 2;

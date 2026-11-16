@@ -238,6 +238,20 @@ Press **Restore originals** in AeTint, or uninstall it from **Settings → Apps*
 - Light/dark switching for menus follows AE's saved preference, so it may lag a few seconds behind the change.
 - Hand-picked timeline colours apply to the dark brightnesses only.
 
+## Roadmap
+
+Planned, roughly in this order:
+
+- [ ] **Re-apply after After Effects updates** — detect when an update replaced the themed files and offer a one-click *Reapply* (and a heads-up from inside AE).
+- [ ] **Label colours** — match AE's 16 label colours to the theme, or pick them by hand.
+- [ ] **Export / import themes** — share a theme as a `.aetint` file and open it with a double-click.
+- [ ] **Custom splash screen** — pick an image; AeTint writes the three splash sizes (`AE_SPLASH`, `_AT_3TO2X`, `_AT_2X`) into `AfterFXLib.dll` on *Apply theme*, restorable like everything else.
+- [ ] **A different theme per version** — e.g. one for 2026 and another for 2027.
+- [ ] **Premiere Pro and Media Encoder** — they share `dvaui.dll` and Win32 menus with After Effects.
+- [ ] **More versions** — verify After Effects 2025 and earlier builds.
+
+Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/issues).
+
 ## Credits
 
 - Built with [Slint](https://slint.dev) and Rust.

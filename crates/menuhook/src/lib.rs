@@ -793,6 +793,7 @@ unsafe fn hook_popup_window(hwnd: HWND) -> bool {
         if CLASS_BG.swap(c.popup, std::sync::atomic::Ordering::Relaxed) != c.popup {
             SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, popup_brush(c.popup) as isize);
         }
+        menu_background(hwnd, &c);
     }
     let mut g = OLD_PROCS.lock().unwrap();
     let map = g.get_or_insert_with(HashMap::new);
@@ -808,6 +809,26 @@ unsafe fn hook_popup_window(hwnd: HWND) -> bool {
 
 const MN_GETHMENU_: u32 = 0x01E1;
 
+/// Fondo del menú de esta ventana con nuestro color. Con un pincel propio, Windows lo usa en vez del gris de su
+/// tema: así también los submenús (que dibujan su fondo por un camino que los enganches del tema no ven).
+unsafe fn menu_background(hwnd: HWND, c: &Colors) {
+    let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
+    if m.is_null() || IsMenu(m) == 0 {
+        return;
+    }
+    let mut mi: MENUINFO = std::mem::zeroed();
+    mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
+    mi.fMask = MIM_BACKGROUND;
+    GetMenuInfo(m, &mut mi);
+    let br = popup_brush(c.popup);
+    if mi.hbrBack != br {
+        mi.fMask = MIM_BACKGROUND;
+        mi.hbrBack = br;
+        SetMenuInfo(m, &mi);
+        log(&format!("fondo del menú {:#x}", m as isize));
+    }
+}
+
 unsafe extern "system" fn on_popup_start(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND, _: i32, _: i32, _: u32, _: u32) {
     if hwnd.is_null() || colors().is_none() {
         return;
@@ -819,6 +840,14 @@ unsafe extern "system" fn on_popup_start(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND,
     // si la ventana no se enganchó al crearse, ahora (y se repinta su marco)
     if hook_popup_window(hwnd) {
         RedrawWindow(hwnd, std::ptr::null(), std::ptr::null_mut(), RDW_FRAME | RDW_INVALIDATE);
+    } else if let Some(c) = colors() {
+        // ya enganchada: el fondo, por si el menú aún no estaba listo al crearse la ventana
+        let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
+        let before = if m.is_null() { 0 } else { let mut mi: MENUINFO = std::mem::zeroed(); mi.cbSize = std::mem::size_of::<MENUINFO>() as u32; mi.fMask = MIM_BACKGROUND; GetMenuInfo(m, &mut mi); mi.hbrBack as isize };
+        menu_background(hwnd, &c);
+        if before != popup_brush(c.popup) as isize {
+            RedrawWindow(hwnd, std::ptr::null(), std::ptr::null_mut(), RDW_INVALIDATE | RDW_ERASE);
+        }
     }
 }
 

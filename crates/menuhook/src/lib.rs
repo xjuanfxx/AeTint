@@ -1059,6 +1059,7 @@ struct Hooks {
     bg_ex: Option<RawDetour>,
     color: Option<RawDetour>,
     dwm: Option<RawDetour>,
+    fill: Option<RawDetour>,
 }
 unsafe impl Send for Hooks {}
 unsafe impl Sync for Hooks {}
@@ -1307,6 +1308,72 @@ unsafe extern "system" fn h_dwm_set(hwnd: HWND, attr: u32, pv: *const c_void, cb
     orig(hwnd, attr, pv, cb)
 }
 
+type FnFill = unsafe extern "system" fn(HDC, *const RECT, HBRUSH) -> i32;
+
+/// Color de un pincel: los índices de color del sistema (COLOR_x + 1) o un pincel sólido.
+unsafe fn brush_color(hbr: HBRUSH) -> Option<u32> {
+    let v = hbr as usize;
+    if v != 0 && v <= 31 {
+        return Some(GetSysColor((v - 1) as i32));
+    }
+    let mut lb: LOGBRUSH = std::mem::zeroed();
+    if GetObjectW(hbr as HGDIOBJ, std::mem::size_of::<LOGBRUSH>() as i32, &mut lb as *mut LOGBRUSH as *mut c_void) == 0 || lb.lbStyle != BS_SOLID {
+        return None;
+    }
+    Some(lb.lbColor)
+}
+
+/// Windows 11 en modo oscuro rellena las opciones de algunos menús sin pasar por el tema, con sus propios grises
+/// (#2B2B2B/#2C2C2C de fondo, #3D3D3D–#424242 al pasar el ratón). Dentro de una ventana de menú se cambian por los nuestros.
+unsafe extern "system" fn h_fill(hdc: HDC, rc: *const RECT, hbr: HBRUSH) -> i32 {
+    let orig: FnFill = std::mem::transmute(HOOKS.get().unwrap().fill.as_ref().unwrap().trampoline());
+    if let (Some(c), Some(col)) = (colors(), brush_color(hbr)) {
+        let (r, g, b) = ((col & 0xff) as i32, ((col >> 8) & 0xff) as i32, ((col >> 16) & 0xff) as i32);
+        let grey = (r - g).abs() <= 2 && (g - b).abs() <= 2;
+        let target = if !grey {
+            None
+        } else if (36..=50).contains(&r) {
+            Some(c.popup)
+        } else if (58..=72).contains(&r) {
+            Some(c.popup_hover)
+        } else {
+            None
+        };
+        if let Some(t) = target {
+            let w = WindowFromDC(hdc);
+            let in_menu = if w.is_null() {
+                menu_mode()
+            } else {
+                let mut cls = [0u16; 16];
+                let n = GetClassNameW(w, cls.as_mut_ptr(), cls.len() as i32);
+                String::from_utf16_lossy(&cls[..n.max(0) as usize]) == "#32768"
+            };
+            if in_menu {
+                return orig(hdc, rc, popup_brush_any(t));
+            }
+        }
+    }
+    orig(hdc, rc, hbr)
+}
+
+/// Pinceles sólidos de nuestros colores (se crean una vez por color).
+unsafe fn popup_brush_any(c: u32) -> HBRUSH {
+    static BR: Mutex<Option<HashMap<u32, isize>>> = Mutex::new(None);
+    let mut g = BR.lock().unwrap();
+    let m = g.get_or_insert_with(HashMap::new);
+    *m.entry(c).or_insert_with(|| CreateSolidBrush(c) as isize) as HBRUSH
+}
+
+unsafe fn fill_hook() -> Option<RawDetour> {
+    let name = wide("user32.dll");
+    let m = GetModuleHandleW(name.as_ptr());
+    if m.is_null() {
+        return None;
+    }
+    let f = GetProcAddress(m, c"FillRect".as_ptr() as *const u8)?;
+    RawDetour::new(f as *const (), h_fill as *const ()).ok()
+}
+
 unsafe fn dwm_hook() -> Option<RawDetour> {
     let name = wide("dwmapi.dll");
     let mut m = GetModuleHandleW(name.as_ptr());
@@ -1345,12 +1412,13 @@ unsafe fn install_hooks() {
         bg_ex: det("DrawThemeBackgroundEx", h_bg_ex as *const ()),
         color: det("GetThemeColor", h_color as *const ()),
         dwm: dwm_hook(),
+        fill: fill_hook(),
     };
     if HOOKS.set(hooks).is_err() {
         return;
     }
     let h = HOOKS.get().unwrap();
-    for d in [&h.open, &h.open_dpi, &h.open_ex, &h.bg, &h.text, &h.text_ex, &h.bg_ex, &h.color, &h.dwm].into_iter().flatten() {
+    for d in [&h.open, &h.open_dpi, &h.open_ex, &h.bg, &h.text, &h.text_ex, &h.bg_ex, &h.color, &h.dwm, &h.fill].into_iter().flatten() {
         let _ = d.enable();
     }
 }

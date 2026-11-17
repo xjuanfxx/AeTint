@@ -812,20 +812,31 @@ const MN_GETHMENU_: u32 = 0x01E1;
 /// Un menú con pincel de fondo propio (AE se lo pone a algunos submenús) no usa el tema de Windows: sale con el
 /// gris oscuro del sistema y los enganches del tema no lo ven. Se le quita, y vuelve a dibujarse con el tema
 /// (que lleva nuestros colores). Los menús con columnas son la excepción: su fondo es nuestro a propósito.
-unsafe fn menu_background(hwnd: HWND, c: &Colors) {
+unsafe fn menu_background(hwnd: HWND, _c: &Colors) {
     let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
-    if m.is_null() || IsMenu(m) == 0 || is_od_menu(m) {
+    clear_backgrounds(m, 0);
+}
+
+/// Quita el fondo propio a un menú y a todos sus submenús. Hay que hacerlo antes de que se cree la ventana de
+/// cada submenú (Windows decide cómo dibujarlo al crearla): al abrirse el menú, AE ya tiene montado el árbol entero.
+unsafe fn clear_backgrounds(m: HMENU, depth: u32) {
+    if m.is_null() || depth > 8 || IsMenu(m) == 0 {
         return;
     }
-    let mut mi: MENUINFO = std::mem::zeroed();
-    mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
-    mi.fMask = MIM_BACKGROUND;
-    GetMenuInfo(m, &mut mi);
-    if !mi.hbrBack.is_null() {
+    if !is_od_menu(m) {
+        let mut mi: MENUINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
         mi.fMask = MIM_BACKGROUND;
-        mi.hbrBack = std::ptr::null_mut();
-        SetMenuInfo(m, &mi);
-        log(&format!("menú {:#x}: sin el fondo propio de AE ({:#x})", m as isize, c.popup));
+        GetMenuInfo(m, &mut mi);
+        if !mi.hbrBack.is_null() {
+            mi.fMask = MIM_BACKGROUND;
+            mi.hbrBack = std::ptr::null_mut();
+            SetMenuInfo(m, &mi);
+            log(&format!("menú {:#x}: sin el fondo propio de AE", m as isize));
+        }
+    }
+    for i in 0..GetMenuItemCount(m).max(0) {
+        clear_backgrounds(GetSubMenu(m, i), depth + 1);
     }
 }
 
@@ -861,6 +872,7 @@ unsafe extern "system" fn cwp_ret(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT 
             if let Some(c) = colors() {
                 // la ventana dueña recibe WM_MEASUREITEM / WM_DRAWITEM: hay que subclasificarla
                 subclass(m.hwnd);
+                clear_backgrounds(m.wParam as HMENU, 0);
                 own_menu(m.wParam as HMENU, &c, m.hwnd);
             }
         }

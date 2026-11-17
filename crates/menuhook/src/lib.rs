@@ -982,11 +982,14 @@ unsafe fn hook_all_threads() {
 /// Ventana de menú recién creada (aún sin mostrar): se engancha ya, para que su marco y la animación de
 /// apertura salgan con nuestros colores desde el primer fotograma. Las ventanas de menú las crea el núcleo
 /// de Windows y su WM_CREATE no pasa por los hooks de mensajes; este aviso sí llega.
-unsafe extern "system" fn on_object_create(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND, id_object: i32, _: i32, _: u32, _: u32) {
+unsafe extern "system" fn on_object_create(ev_hook: HWINEVENTHOOK, ev: u32, hwnd: HWND, id_object: i32, child: i32, th: u32, t: u32) {
     if id_object != 0 || hwnd.is_null() || colors().is_none() {
         return; // solo ventanas (OBJID_WINDOW)
     }
-    hook_popup_window(hwnd);
+    if !hook_popup_window(hwnd) {
+        // ventana principal recién creada: barra de menús y título antes de que se vea
+        on_window_event(ev_hook, ev, hwnd, id_object, child, th, t);
+    }
 }
 
 unsafe fn install_popup_hook() {
@@ -994,6 +997,8 @@ unsafe fn install_popup_hook() {
     let pid = GetCurrentProcessId();
     let h = SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, module, Some(on_popup_start), pid, 0, WINEVENT_INCONTEXT);
     let h2 = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE, module, Some(on_object_create), pid, 0, WINEVENT_INCONTEXT);
+    // ventanas principales: en cuanto se muestran (o cambian de menú), sin esperar al sondeo
+    SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW, module, Some(on_window_event), pid, 0, WINEVENT_INCONTEXT);
     log(&format!("win event hooks {:?} {:?}", h, h2));
 }
 
@@ -1060,6 +1065,7 @@ struct Hooks {
     color: Option<RawDetour>,
     dwm: Option<RawDetour>,
     fill: Option<RawDetour>,
+    patblt: Option<RawDetour>,
 }
 unsafe impl Send for Hooks {}
 unsafe impl Sync for Hooks {}
@@ -1325,35 +1331,54 @@ unsafe fn brush_color(hbr: HBRUSH) -> Option<u32> {
 
 /// Windows 11 en modo oscuro rellena las opciones de algunos menús sin pasar por el tema, con sus propios grises
 /// (#2B2B2B/#2C2C2C de fondo, #3D3D3D–#424242 al pasar el ratón). Dentro de una ventana de menú se cambian por los nuestros.
+/// Nuestro color en lugar de un gris de menú de Windows, si se dibuja en una ventana de menú.
+unsafe fn menu_grey_swap(hdc: HDC, col: u32) -> Option<u32> {
+    let c = colors()?;
+    let (r, g, b) = ((col & 0xff) as i32, ((col >> 8) & 0xff) as i32, ((col >> 16) & 0xff) as i32);
+    if (r - g).abs() > 2 || (g - b).abs() > 2 {
+        return None;
+    }
+    let t = if (36..=50).contains(&r) {
+        c.popup
+    } else if (58..=72).contains(&r) {
+        c.popup_hover
+    } else {
+        return None;
+    };
+    let w = WindowFromDC(hdc);
+    let in_menu = if w.is_null() {
+        menu_mode()
+    } else {
+        let mut cls = [0u16; 16];
+        let n = GetClassNameW(w, cls.as_mut_ptr(), cls.len() as i32);
+        String::from_utf16_lossy(&cls[..n.max(0) as usize]) == "#32768"
+    };
+    in_menu.then_some(t)
+}
+
 unsafe extern "system" fn h_fill(hdc: HDC, rc: *const RECT, hbr: HBRUSH) -> i32 {
     let orig: FnFill = std::mem::transmute(HOOKS.get().unwrap().fill.as_ref().unwrap().trampoline());
-    if let (Some(c), Some(col)) = (colors(), brush_color(hbr)) {
-        let (r, g, b) = ((col & 0xff) as i32, ((col >> 8) & 0xff) as i32, ((col >> 16) & 0xff) as i32);
-        let grey = (r - g).abs() <= 2 && (g - b).abs() <= 2;
-        let target = if !grey {
-            None
-        } else if (36..=50).contains(&r) {
-            Some(c.popup)
-        } else if (58..=72).contains(&r) {
-            Some(c.popup_hover)
-        } else {
-            None
-        };
-        if let Some(t) = target {
-            let w = WindowFromDC(hdc);
-            let in_menu = if w.is_null() {
-                menu_mode()
-            } else {
-                let mut cls = [0u16; 16];
-                let n = GetClassNameW(w, cls.as_mut_ptr(), cls.len() as i32);
-                String::from_utf16_lossy(&cls[..n.max(0) as usize]) == "#32768"
-            };
-            if in_menu {
-                return orig(hdc, rc, popup_brush_any(t));
-            }
-        }
+    if let Some(t) = brush_color(hbr).and_then(|col| menu_grey_swap(hdc, col)) {
+        return orig(hdc, rc, popup_brush_any(t));
     }
     orig(hdc, rc, hbr)
+}
+
+type FnPatBlt = unsafe extern "system" fn(HDC, i32, i32, i32, i32, u32) -> i32;
+
+/// La franja junto al borde derecho de algunos submenús se rellena con PatBlt y el pincel del DC.
+unsafe extern "system" fn h_patblt(hdc: HDC, x: i32, y: i32, w: i32, h: i32, rop: u32) -> i32 {
+    let orig: FnPatBlt = std::mem::transmute(HOOKS.get().unwrap().patblt.as_ref().unwrap().trampoline());
+    if rop == PATCOPY {
+        let cur = GetCurrentObject(hdc, OBJ_BRUSH as u32) as HBRUSH;
+        if let Some(t) = brush_color(cur).and_then(|col| menu_grey_swap(hdc, col)) {
+            let old = SelectObject(hdc, popup_brush_any(t) as HGDIOBJ);
+            let r = orig(hdc, x, y, w, h, rop);
+            SelectObject(hdc, old);
+            return r;
+        }
+    }
+    orig(hdc, x, y, w, h, rop)
 }
 
 /// Pinceles sólidos de nuestros colores (se crean una vez por color).
@@ -1372,6 +1397,16 @@ unsafe fn fill_hook() -> Option<RawDetour> {
     }
     let f = GetProcAddress(m, c"FillRect".as_ptr() as *const u8)?;
     RawDetour::new(f as *const (), h_fill as *const ()).ok()
+}
+
+unsafe fn patblt_hook() -> Option<RawDetour> {
+    let name = wide("gdi32.dll");
+    let m = GetModuleHandleW(name.as_ptr());
+    if m.is_null() {
+        return None;
+    }
+    let f = GetProcAddress(m, c"PatBlt".as_ptr() as *const u8)?;
+    RawDetour::new(f as *const (), h_patblt as *const ()).ok()
 }
 
 unsafe fn dwm_hook() -> Option<RawDetour> {
@@ -1413,12 +1448,13 @@ unsafe fn install_hooks() {
         color: det("GetThemeColor", h_color as *const ()),
         dwm: dwm_hook(),
         fill: fill_hook(),
+        patblt: patblt_hook(),
     };
     if HOOKS.set(hooks).is_err() {
         return;
     }
     let h = HOOKS.get().unwrap();
-    for d in [&h.open, &h.open_dpi, &h.open_ex, &h.bg, &h.text, &h.text_ex, &h.bg_ex, &h.color, &h.dwm, &h.fill].into_iter().flatten() {
+    for d in [&h.open, &h.open_dpi, &h.open_ex, &h.bg, &h.text, &h.text_ex, &h.bg_ex, &h.color, &h.dwm, &h.fill, &h.patblt].into_iter().flatten() {
         let _ = d.enable();
     }
 }
@@ -1474,6 +1510,33 @@ fn log(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(config_path().with_file_name("menu.log")) {
         let _ = writeln!(f, "{msg}");
     }
+}
+
+/// Título y barra de menús de una ventana de AE. Se llama en cuanto Windows avisa de que la ventana se crea o se
+/// muestra (antes de su primer dibujo: sin el destello de la barra nativa) y, como respaldo, desde el sondeo.
+unsafe fn setup_window(hwnd: HWND, c: Option<&Colors>) {
+    let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+    if style & WS_CAPTION == WS_CAPTION {
+        paint_title(hwnd, c);
+    }
+    hook_thread(hwnd);
+    let menu = GetMenu(hwnd);
+    if !menu.is_null() {
+        subclass(hwnd);
+        DrawMenuBar(hwnd);
+    }
+}
+
+/// Ventana de AE creada o mostrada: se prepara al momento (fuera del sondeo, que tarda hasta 250 ms).
+unsafe extern "system" fn on_window_event(_: HWINEVENTHOOK, _ev: u32, hwnd: HWND, id_object: i32, _: i32, _: u32, _: u32) {
+    if id_object != 0 || hwnd.is_null() || !GetParent(hwnd).is_null() {
+        return;
+    }
+    let Some(c) = colors() else { return };
+    if GetMenu(hwnd).is_null() && GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CAPTION != WS_CAPTION {
+        return;
+    }
+    setup_window(hwnd, Some(&c));
 }
 
 fn worker() {
@@ -1542,25 +1605,8 @@ fn worker() {
                     continue;
                 }
                 seen.insert(w);
-                let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-                log(&format!("win {w:#x} style {style:#x} menu {:?} colors {}", GetMenu(hwnd), c.is_some()));
-                if style & WS_CAPTION == WS_CAPTION {
-                    paint_title(hwnd, c.as_ref());
-                }
-                hook_thread(hwnd);
-                let menu = GetMenu(hwnd);
-                if !menu.is_null() {
-                    subclass(hwnd);
-                    if let Some(c) = &c {
-                        let br = CreateSolidBrush(c.popup);
-                        let mut mi: MENUINFO = std::mem::zeroed();
-                        mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
-                        mi.fMask = MIM_BACKGROUND | MIM_APPLYTOSUBMENUS;
-                        mi.hbrBack = br;
-                        SetMenuInfo(menu, &mi);
-                    }
-                    DrawMenuBar(hwnd);
-                }
+                log(&format!("win {w:#x} style {:#x} menu {:?} colors {}", GetWindowLongW(hwnd, GWL_STYLE) as u32, GetMenu(hwnd), c.is_some()));
+                setup_window(hwnd, c.as_ref());
                 RedrawWindow(hwnd, std::ptr::null(), std::ptr::null_mut(), RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
             }
         }

@@ -361,6 +361,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     od_draw(hwnd, d, it, &c);
                     1
                 }
+                // opción de menú que dibuja AE (submenús con ✓): que la dibuje y luego se cambia su fondo gris
+                _ if d.CtlType == ODT_MENU => {
+                    let r = call_old(msg, wp, lp);
+                    recolor_ae_item(d, &c);
+                    r
+                }
                 _ => call_old(msg, wp, lp),
             }
         }
@@ -584,6 +590,59 @@ unsafe fn own_menu(m: HMENU, c: &Colors, hwnd: HWND) {
     if n_done > 0 {
         log(&format!("menú {:#x} (columnas: {cols}): {n_done} opciones pasan a owner-draw", m as isize));
     }
+}
+
+/// Cambia el fondo de una opción de menú que ha dibujado AE por el nuestro, conservando lo que hay encima
+/// (texto, ✓, atajo): cada píxel se desplaza del fondo de AE al nuestro según lo parecido que sea a ese fondo.
+unsafe fn recolor_ae_item(d: &DRAWITEMSTRUCT, c: &Colors) {
+    let r = d.rcItem;
+    let (w, h) = (r.right - r.left, r.bottom - r.top);
+    if w <= 0 || h <= 0 || w > 4000 || h > 400 {
+        return;
+    }
+    let mdc = CreateCompatibleDC(d.hDC);
+    if mdc.is_null() {
+        return;
+    }
+    let mut bi: BITMAPINFO = std::mem::zeroed();
+    bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    let mut bits: *mut c_void = std::ptr::null_mut();
+    let bmp = CreateDIBSection(mdc, &bi, DIB_RGB_COLORS, &mut bits, std::ptr::null_mut(), 0);
+    if bmp.is_null() || bits.is_null() {
+        DeleteDC(mdc);
+        return;
+    }
+    let old = SelectObject(mdc, bmp as HGDIOBJ);
+    BitBlt(mdc, 0, 0, w, h, d.hDC, r.left, r.top, SRCCOPY);
+    let px = std::slice::from_raw_parts_mut(bits as *mut u8, (w * h * 4) as usize);
+    // el fondo de AE: el píxel más repetido de la fila (lo que no es texto)
+    let mut counts: HashMap<u32, u32> = HashMap::new();
+    for p in px.chunks_exact(4).step_by(3) {
+        *counts.entry(u32::from_le_bytes([p[0], p[1], p[2], 0])).or_insert(0) += 1;
+    }
+    let bg = counts.into_iter().max_by_key(|e| e.1).map(|e| e.0).unwrap_or(0);
+    let (bb, bg_g, br) = ((bg & 0xff) as f32, ((bg >> 8) & 0xff) as f32, ((bg >> 16) & 0xff) as f32);
+    // el nuestro (COLORREF es 0x00BBGGRR)
+    let ours = if d.itemState & ODS_SELECTED != 0 { c.popup_hover } else { c.popup };
+    let (or, og, ob) = ((ours & 0xff) as f32, ((ours >> 8) & 0xff) as f32, ((ours >> 16) & 0xff) as f32);
+    for p in px.chunks_exact_mut(4) {
+        let (b, g, rr) = (p[0] as f32, p[1] as f32, p[2] as f32);
+        let dist = ((b - bb).abs() + (g - bg_g).abs() + (rr - br).abs()) / 3.0;
+        // 0 = fondo puro, 1 = lejos del fondo (texto): solo se desplaza lo que se parece al fondo
+        let k = 1.0 - (dist / 120.0).min(1.0);
+        p[0] = (b + (ob - bb) * k).clamp(0.0, 255.0) as u8;
+        p[1] = (g + (og - bg_g) * k).clamp(0.0, 255.0) as u8;
+        p[2] = (rr + (or - br) * k).clamp(0.0, 255.0) as u8;
+    }
+    BitBlt(d.hDC, r.left, r.top, w, h, mdc, 0, 0, SRCCOPY);
+    SelectObject(mdc, old);
+    DeleteObject(bmp as HGDIOBJ);
+    DeleteDC(mdc);
+    log(&format!("opción de AE {} recoloreada (fondo {:#08x})", d.itemID, bg));
 }
 
 unsafe fn text_size(hdc: HDC, s: &[u16]) -> (i32, i32) {

@@ -60,10 +60,71 @@ pub fn write_colors(dark: &Palette, light: &Palette, enabled: bool) -> Result<()
     std::fs::write(data_dir().join("menu.json"), serde_json::to_vec_pretty(&m).unwrap()).map_err(|e| e.to_string())
 }
 
-/// La DLL que viene junto a AeTint.exe.
+/// La DLL que viene junto a AeTint.exe. El vigilante corre desde una copia en %LOCALAPPDATA%\AeTint: allí la
+/// toma de la ruta anotada en dll_path.txt.
 fn bundled_dll() -> Option<PathBuf> {
     let p = std::env::current_exe().ok()?.with_file_name(DLL_NAME);
+    if p.is_file() {
+        return Some(p);
+    }
+    let p = PathBuf::from(std::fs::read_to_string(data_dir().join("dll_path.txt")).ok()?.trim());
     p.is_file().then_some(p)
+}
+
+/// Nombre del proceso del vigilante: una copia de AeTint con otro nombre, para que no se confunda con la app.
+pub const WATCHDOG_EXE: &str = "AeTintWatchdog.exe";
+
+/// La copia del vigilante, al día con este AeTint.
+fn watchdog_exe() -> Result<PathBuf, String> {
+    let src = std::env::current_exe().map_err(|e| e.to_string())?;
+    let dst = data_dir().join(WATCHDOG_EXE);
+    if src == dst {
+        return Ok(dst);
+    }
+    let same = match (std::fs::metadata(&src), std::fs::metadata(&dst)) {
+        (Ok(a), Ok(b)) => a.len() == b.len() && a.modified().ok() <= b.modified().ok(),
+        _ => false,
+    };
+    if !same {
+        std::fs::create_dir_all(data_dir()).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::copy(&src, &dst) {
+            // en uso por un vigilante que ya corre: vale la copia que hay
+            if !dst.is_file() {
+                return Err(e.to_string());
+            }
+        }
+    }
+    Ok(dst)
+}
+
+/// Cierra el vigilante si está corriendo: el de su ventana de la bandeja (también el de versiones anteriores, que
+/// corría como aetint.exe --watch).
+pub fn stop_watcher() {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_TERMINATE, PROCESS_SYNCHRONIZE};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, GetWindowThreadProcessId};
+        let cls: Vec<u16> = "AeTintWatcherTray".encode_utf16().chain(Some(0)).collect();
+        for _ in 0..4 {
+            let h = FindWindowW(cls.as_ptr(), std::ptr::null());
+            if h.is_null() {
+                break;
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(h, &mut pid);
+            if pid == 0 || pid == std::process::id() {
+                break;
+            }
+            let p = OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, pid);
+            if p.is_null() {
+                break;
+            }
+            TerminateProcess(p, 0);
+            WaitForSingleObject(p, 2000);
+            CloseHandle(p);
+        }
+    }
 }
 
 /// Deja anotada la ruta de la DLL (junto a AeTint.exe) en %LOCALAPPDATA%\AeTint\dll_path.txt: de ahí la lee
@@ -321,7 +382,9 @@ mod win {
         }
 
         fn open_aetint() {
-            if let Ok(exe) = std::env::current_exe() {
+            // el vigilante corre desde su copia: la app de verdad está junto a la DLL
+            let app = super::bundled_dll().and_then(|d| d.parent().map(|p| p.join("AeTint.exe"))).filter(|p| p.is_file());
+            if let Some(exe) = app.or_else(|| std::env::current_exe().ok()) {
                 let _ = std::process::Command::new(exe).spawn();
             }
         }
@@ -447,7 +510,7 @@ pub fn start_watcher() -> Result<(), String> {
             return Ok(());
         }
         use std::os::windows::process::CommandExt;
-        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe = watchdog_exe()?;
         std::process::Command::new(exe)
             .arg("--watch")
             .creation_flags(0x0800_0000 | 0x0000_0008) // sin ventana, desacoplado
@@ -463,7 +526,7 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
     {
         use std::os::windows::process::CommandExt;
         let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe = watchdog_exe()?;
         let mut c = std::process::Command::new("reg");
         if on {
             c.args(["add", key, "/v", "AeTint", "/t", "REG_SZ", "/f", "/d", &format!("\"{}\" --watch", exe.display())]);

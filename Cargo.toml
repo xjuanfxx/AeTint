@@ -3,7 +3,7 @@ members = [".", "crates/menuhook", "crates/menutest", "crates/loader", "crates/s
 
 [package]
 name = "aetint"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.88"
 description = "AeTint — temas completos para After Effects (paneles, timeline y menús)"
@@ -16,20 +16,18 @@ name = "AeTint"
 path = "src/main.rs"
 
 [dependencies]
-slint = { version = "1.16", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-2", "unstable-winit-030"] }
+slint = { version = "1.16", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2", "unstable-winit-030"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order: al reescribir los JSON de Adobe las claves quedan en el mismo orden.
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
-# comprobación de actualizaciones (última Release de GitHub)
-ureq = { version = "2", features = ["json"] }
 # pantalla de inicio propia: leer la imagen (PNG/JPG), escalarla y guardarla como PNG
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 png = "0.17"
 color_quant = "1.1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Dwm", "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Media_Audio", "Win32_UI_Controls_Dialogs"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Dwm", "Win32_Networking_WinHttp", "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Media_Audio", "Win32_UI_Controls_Dialogs"] }
 
 [build-dependencies]
 slint-build = "1.16"
@@ -37,7 +35,7 @@ winresource = "0.1"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 strip = true
 panic = "abort"

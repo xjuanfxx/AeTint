@@ -94,7 +94,8 @@ fn reg_value_exists(key: &str, name: &str) -> bool {
     cmd("reg").args(["query", key, "/v", name]).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
-/// Cierra los AeTint.exe que corren desde la carpeta de instalación (la app o su vigilante).
+/// Cierra los AeTint.exe que corren desde la carpeta de instalación y el vigilante (AeTintWatchdog.exe, una copia
+/// en %LOCALAPPDATA%\AeTint).
 #[cfg(windows)]
 fn stop_installed_aetint(dir: &Path) {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
@@ -111,7 +112,15 @@ fn stop_installed_aetint(dir: &Path) {
         let mut ok = Process32FirstW(snap, &mut e);
         while ok != 0 {
             let n = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
-            if String::from_utf16_lossy(&e.szExeFile[..n]).eq_ignore_ascii_case("AeTint.exe") {
+            let name = String::from_utf16_lossy(&e.szExeFile[..n]);
+            if name.eq_ignore_ascii_case("AeTintWatchdog.exe") {
+                let h = OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, e.th32ProcessID);
+                if !h.is_null() {
+                    TerminateProcess(h, 0);
+                    WaitForSingleObject(h, 3000);
+                    CloseHandle(h);
+                }
+            } else if name.eq_ignore_ascii_case("AeTint.exe") {
                 let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, e.th32ProcessID);
                 if !h.is_null() {
                     let mut buf = [0u16; 1024];
@@ -227,6 +236,7 @@ fn uninstall(o: &Opts, es: bool, report: &Report) -> Result<String, String> {
     let _ = std::fs::remove_file(desktop_lnk());
     let _ = cmd("reg").args(["delete", UNINSTALL_KEY, "/f"]).status();
     let _ = cmd("reg").args(["delete", RUN_KEY, "/v", "AeTint", "/f"]).status();
+    let _ = std::fs::remove_file(data_dir().join("AeTintWatchdog.exe"));
     // asociación de los temas .aetint (la crea AeTint al abrirse)
     let _ = cmd("reg").args(["delete", r"HKCU\Software\Classes\.aetint", "/f"]).status();
     let _ = cmd("reg").args(["delete", r"HKCU\Software\Classes\AeTint.Theme", "/f"]).status();

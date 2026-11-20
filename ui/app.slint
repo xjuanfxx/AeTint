@@ -68,6 +68,16 @@ export global Ui {
     pure callback hsv-color(float, float, float) -> color;
     pure callback hsv-hex(float, float, float) -> string;
     pure callback hex-hsv(string) -> Hsv;
+    // el cuadro de saturación y brillo de un tono, como imagen
+    pure callback sv-image(float) -> image;
+    // mancha de luz blanca (se colorea) y fondo del logo con su degradado, dibujados en Rust
+    // luz: color, alfa máximo, radio, tipo de degradado y zona (x0, y0, ancho, alto) relativa al centro
+    pure callback glow-image(color, float, float, int, float, float, float, float) -> image;
+    pure callback logo-image(color, float) -> image;
+    // engranaje de los ajustes girado ese ángulo (grados), como comandos de Path de 16×16
+    pure callback gear-path(float) -> string;
+    // pista de un deslizador (0 tono, 1 saturación, 2 luminosidad) para un color HSL
+    pure callback track-image(int, float, float, float) -> image;
 }
 
 component Btn inherits Rectangle {
@@ -77,16 +87,35 @@ component Btn inherits Rectangle {
     callback clicked;
     height: 36px;
     min-width: txt.preferred-width + 28px;
+    preferred-width: txt.preferred-width + 28px;
+    horizontal-stretch: 0;
     border-radius: 8px;
     background: !enabled ? Ui.p.raised : primary ? (ta.pressed ? Ui.p.accent.darker(0.08) : ta.has-hover ? Ui.p.accent.brighter(0.08) : Ui.p.accent) : (ta.has-hover ? Ui.p.raised : transparent);
     border-width: primary ? 0 : 1px;
     border-color: Ui.p.frame;
     animate background { duration: 100ms; }
+    drop-shadow-blur: primary && enabled ? (ta.pressed ? 6px : ta.has-hover ? 18px : 0px) : 0px;
+    drop-shadow-color: Ui.p.accent.with-alpha(0.45);
+    animate drop-shadow-blur { duration: 220ms; easing: ease-out; }
+    // al pulsar: un destello que se abre desde el centro y se desvanece
+    flash := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: ta.pressed ? parent.width : 0px;
+        height: parent.height;
+        border-radius: root.border-radius;
+        background: (primary ? #ffffff : Ui.p.text).with-alpha(ta.pressed ? 0.16 : 0);
+        animate width { duration: ta.pressed ? 220ms : 0ms; easing: ease-out; }
+        animate background { duration: 300ms; easing: ease-out; }
+    }
+    // centrado en un píxel entero: con la posición a medio píxel el texto blanco sobre el acento se veía disparejo
     txt := Text {
+        x: Math.round((parent.width - self.width) / 2 / 1px) * 1px;
+        y: Math.round((parent.height - self.height) / 2 / 1px) * 1px;
         text: root.text;
         color: !enabled ? Ui.p.muted : primary ? Ui.p.on-accent : Ui.p.text;
         font-family: "Archivo Expanded";
-        font-size: 11.5px;
+        font-size: 12px;
         font-weight: 800;
     }
     ta := TouchArea {
@@ -98,18 +127,24 @@ component Btn inherits Rectangle {
 
 component Check inherits Rectangle {
     in property <bool> checked;
-    width: 15px;
-    height: 15px;
+    width: 16px;
+    height: 16px;
     border-radius: 4px;
-    border-width: 1.5px;
-    border-color: checked ? Ui.p.accent : Ui.p.muted;
+    border-width: checked ? 0px : 1px;
+    border-color: Ui.p.muted;
     background: checked ? Ui.p.accent : transparent;
-    Text {
-        visible: checked;
-        text: "✓";
-        color: Ui.p.on-accent;
-        font-size: 11px;
-        font-weight: 700;
+    // palomita dibujada (el carácter ✓ salía de una fuente de respaldo y se veía raro)
+    if checked: Path {
+        width: 16px;
+        height: 16px;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        stroke: Ui.p.on-accent;
+        stroke-width: 1.8px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        fill: transparent;
+        commands: "M 4.2 8.3 L 6.9 10.9 L 11.9 5.4";
     }
 }
 
@@ -121,7 +156,6 @@ component Switch inherits Rectangle {
     background: on ? Ui.p.accent : Ui.p.raised;
     border-width: 1px;
     border-color: on ? Ui.p.accent : Ui.p.frame;
-    animate background { duration: 150ms; }
     Rectangle {
         x: on ? parent.width - self.width - 3px : 3px;
         width: 12px;
@@ -159,9 +193,9 @@ component WinBtn inherits Rectangle {
 component Cap inherits Text {
     color: Ui.p.muted;
     font-family: "Archivo Expanded";
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: 1.4px;
+    letter-spacing: 1px;
 }
 
 // Logo: gota (el tinte) con una mini timeline dentro: tres capas y el cabezal.
@@ -171,8 +205,12 @@ component Logo inherits Rectangle {
     width: size;
     height: size;
     border-radius: size * 0.28;
-    clip: true;
-    background: @linear-gradient(135deg, Ui.p.accent.brighter(0.35) 0%, Ui.p.accent 50%, Ui.p.accent.darker(0.45) 100%);
+    Image {
+        width: root.size;
+        height: root.size;
+        source: Ui.logo-image(Ui.p.accent, root.size / 1px);
+        image-fit: fill;
+    }
     Path {
         x: 0;
         y: 0;
@@ -195,15 +233,163 @@ component Logo inherits Rectangle {
     Rectangle { x: root.u * 16.5; y: root.u * 11.4; width: root.u * 3; height: root.u * 2.2; border-radius: root.u * 0.7; background: Ui.p.accent.darker(0.1); }
 }
 
+// Deslizador de un canal (H, S o L): letra · pista con el degradado del canal · valor
+component ChanSlider inherits Rectangle {
+    in property <string> label;
+    in property <float> value;
+    in property <image> track;
+    // valor que se muestra y se escribe: 0..max (360 para el tono, 100 para S y L)
+    in property <float> range: 100;
+    in property <string> unit;
+    // relleno del círculo: el color que da ese punto
+    in property <color> knob: white;
+    callback moved(float);
+    height: 20px;
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: root.label;
+            width: 10px;
+            color: Ui.p.muted;
+            font-family: "Archivo Expanded";
+            font-size: 9.5px;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+        tr := Rectangle {
+            horizontal-stretch: 1;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 10px;
+                border-radius: 5px;
+                clip: true;
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.track;
+                    image-fit: fill;
+                }
+            }
+            // esquinas redondeadas (ver el cuadro de color del selector); fuera del recorte para que se vea
+            Rectangle {
+                x: -5px;
+                y: (parent.height - 10px) / 2 - 5px;
+                width: parent.width + 10px;
+                height: 20px;
+                border-radius: 10px;
+                border-width: 5px;
+                border-color: Ui.p.panel;
+            }
+            Rectangle {
+                x: root.value * (tr.width - self.width);
+                y: (parent.height - self.height) / 2;
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                border-width: 2px;
+                border-color: white;
+                background: root.knob;
+                drop-shadow-blur: 3px;
+                drop-shadow-color: #00000080;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                function upd() { root.moved(max(0, min(1, (self.mouse-x - 7px) / (tr.width - 14px)))); }
+                pointer-event(e) => { if (e.kind == PointerEventKind.down) { self.upd(); } }
+                moved => { if (self.pressed) { self.upd(); } }
+            }
+        }
+        // recuadro para escribir el valor a mano
+        Rectangle {
+            width: 46px;
+            border-radius: 5px;
+            background: Ui.p.base;
+            border-width: 1px;
+            border-color: num.has-focus ? Ui.p.accent : Ui.p.frame;
+            animate border-color { duration: 120ms; }
+            num := TextInput {
+                x: 6px;
+                width: parent.width - 18px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                text: round(root.value * root.range);
+                color: Ui.p.text;
+                font-size: 10.5px;
+                font-family: "JetBrains Mono";
+                single-line: true;
+                input-type: decimal;
+                function commit() {
+                    if (self.text.is-float()) {
+                        root.moved(max(0, min(1, self.text.to-float() / root.range)));
+                    }
+                    self.text = round(root.value * root.range);
+                }
+                accepted => { self.commit(); self.clear-focus(); }
+                changed has-focus => { if (!self.has-focus) { self.commit(); } }
+                edited => { if (self.text.is-float() && self.text.to-float() >= 0 && self.text.to-float() <= root.range) { root.moved(self.text.to-float() / root.range); } }
+            }
+            Text {
+                x: parent.width - 11px;
+                text: root.unit;
+                color: Ui.p.muted;
+                font-size: 9px;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+        }
+    }
+    // al arrastrar o cambiar desde fuera, el recuadro sigue al valor (si no se está escribiendo en él)
+    changed value => { if (!num.has-focus) { num.text = round(root.value * root.range); } }
+}
+
+// Selector de color: el cuadro (saturación y brillo) y deslizadores de tono, saturación y luminosidad (HSL).
+// El color de verdad se guarda en HSV (h, s, v); la saturación y luminosidad HSL se guardan aparte mientras se
+// arrastran, para que llegar a negro o blanco no borre la saturación elegida.
 component Picker inherits Rectangle {
     in-out property <float> h;
     in-out property <float> s;
     in-out property <float> v;
+    property <float> sl;
+    property <float> l;
     callback changed(string);
-    width: 236px;
-    height: 230px;
+    width: 248px;
+    height: 262px;
+
+    pure function l-of(s: float, v: float) -> float { return v * (1 - s / 2); }
+    pure function sl-of(s: float, v: float) -> float {
+        return (l-of(s, v) <= 0.0001 || l-of(s, v) >= 0.9999) ? 0 : (v - l-of(s, v)) / min(l-of(s, v), 1 - l-of(s, v));
+    }
+    pure function v-of(sl: float, l: float) -> float { return l + sl * min(l, 1 - l); }
+    pure function sv-of(sl: float, l: float) -> float { return v-of(sl, l) <= 0.0001 ? 0 : 2 * (1 - l / v-of(sl, l)); }
+    pure function hsl(h: float, sl: float, l: float) -> color { return Ui.hsv-color(h, sv-of(sl, l), v-of(sl, l)); }
+    function sync() {
+        root.sl = sl-of(root.s, root.v);
+        root.l = l-of(root.s, root.v);
+    }
+    function from-hsl() {
+        root.s = sv-of(root.sl, root.l);
+        root.v = v-of(root.sl, root.l);
+        root.changed(Ui.hsv-hex(root.h, root.s, root.v));
+    }
+    property <bool> shown;
+    init => {
+        sync();
+        appear.running = true;
+    }
+    appear := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            root.shown = true;
+            self.running = false;
+        }
+    }
 
     Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.94;
+        animate opacity { duration: 160ms; easing: ease-out; }
+        animate transform-scale { duration: 260ms; easing: ease-out-back; }
         background: Ui.p.panel;
         border-radius: 12px;
         border-width: 1px;
@@ -215,12 +401,27 @@ component Picker inherits Rectangle {
             x: 12px;
             y: 12px;
             width: parent.width - 24px;
-            height: 160px;
-            border-radius: 8px;
-            clip: true;
-            background: @linear-gradient(90deg, #ffffff 0%, Ui.hsv-color(root.h, 1, 1) 100%);
+            height: 132px;
             Rectangle {
-                background: @linear-gradient(180deg, #00000000 0%, #000000 100%);
+                border-radius: 8px;
+                clip: true;
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: Ui.sv-image(root.h);
+                    image-fit: fill;
+                }
+            }
+            // esquinas redondeadas: un marco del color del fondo encima (el renderizador por software no recorta
+            // con radio); su borde interior coincide con el del cuadro
+            Rectangle {
+                x: -8px;
+                y: -8px;
+                width: parent.width + 16px;
+                height: parent.height + 16px;
+                border-radius: 16px;
+                border-width: 8px;
+                border-color: Ui.p.panel;
             }
             Rectangle {
                 x: root.s * sv.width - 7px;
@@ -232,18 +433,12 @@ component Picker inherits Rectangle {
                 border-color: white;
                 background: Ui.hsv-color(root.h, root.s, root.v);
             }
-            // borde encima: tapa el filo claro que deja el suavizado de las esquinas (capa blanca bajo la negra)
-            Rectangle {
-                border-radius: 8px;
-                border-width: 1px;
-                border-color: Ui.p.frame;
-                background: transparent;
-            }
             TouchArea {
                 mouse-cursor: crosshair;
                 function upd() {
                     root.s = max(0, min(1, self.mouse-x / sv.width));
                     root.v = max(0, min(1, 1 - self.mouse-y / sv.height));
+                    sync();
                     root.changed(Ui.hsv-hex(root.h, root.s, root.v));
                 }
                 pointer-event(e) => { if (e.kind == PointerEventKind.down) { self.upd(); } }
@@ -251,40 +446,68 @@ component Picker inherits Rectangle {
             }
         }
 
-        hue := Rectangle {
+        VerticalLayout {
             x: 12px;
-            y: 184px;
+            y: 156px;
+            width: parent.width - 24px;
+            height: 70px;
+            spacing: 8px;
+            ChanSlider {
+                label: "H";
+                value: root.h;
+                range: 360;
+                unit: "°";
+                knob: Ui.hsv-color(root.h, 1, 1);
+                track: Ui.track-image(0, root.h, root.sl, root.l);
+                moved(x) => {
+                    root.h = min(0.999, x);
+                    root.changed(Ui.hsv-hex(root.h, root.s, root.v));
+                }
+            }
+            ChanSlider {
+                label: "S";
+                value: root.sl;
+                unit: "%";
+                knob: Ui.hsv-color(root.h, root.s, root.v);
+                track: Ui.track-image(1, root.h, root.sl, root.l);
+                moved(x) => {
+                    root.sl = x;
+                    from-hsl();
+                }
+            }
+            ChanSlider {
+                label: "L";
+                value: root.l;
+                unit: "%";
+                knob: Ui.hsv-color(root.h, root.s, root.v);
+                track: Ui.track-image(2, root.h, root.sl, root.l);
+                moved(x) => {
+                    root.l = x;
+                    from-hsl();
+                }
+            }
+        }
+
+        HorizontalLayout {
+            x: 12px;
+            y: 234px;
             width: parent.width - 24px;
             height: 16px;
-            border-radius: 8px;
-            background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.6%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.6%, #ff00ff 83.3%, #ff0000 100%);
+            spacing: 8px;
             Rectangle {
-                x: root.h * hue.width - 4px;
-                width: 8px;
-                height: parent.height + 4px;
+                width: 16px;
                 border-radius: 4px;
-                border-width: 2px;
-                border-color: white;
-                background: transparent;
+                background: Ui.hsv-color(root.h, root.s, root.v);
+                border-width: 1px;
+                border-color: Ui.p.frame;
             }
-            TouchArea {
-                mouse-cursor: pointer;
-                function upd() {
-                    root.h = max(0, min(0.999, self.mouse-x / hue.width));
-                    root.changed(Ui.hsv-hex(root.h, root.s, root.v));
-                }
-                pointer-event(e) => { if (e.kind == PointerEventKind.down) { self.upd(); } }
-                moved => { if (self.pressed) { self.upd(); } }
+            Text {
+                text: Ui.hsv-hex(root.h, root.s, root.v);
+                color: Ui.p.muted;
+                font-size: 11px;
+                font-family: "Consolas";
+                vertical-alignment: center;
             }
-        }
-
-        Text {
-            x: 12px;
-            y: 206px;
-            text: Ui.hsv-hex(root.h, root.s, root.v);
-            color: Ui.p.muted;
-            font-size: 11px;
-            font-family: "Consolas";
         }
     }
 }
@@ -357,10 +580,10 @@ component ColorRow inherits Rectangle {
     }
 
     popup := PopupWindow {
-        x: -246px;
-        y: -90px;
-        width: 236px;
-        height: 230px;
+        x: -258px;
+        y: -110px;
+        width: 248px;
+        height: 262px;
         close-policy: close-on-click-outside;
         Picker {
             h <=> root.ph;
@@ -431,10 +654,10 @@ component TlRow inherits Rectangle {
         VerticalLayout { alignment: center; Check { checked: root.entry.custom; } }
     }
     popup := PopupWindow {
-        x: -246px;
-        y: -100px;
-        width: 236px;
-        height: 230px;
+        x: -258px;
+        y: -120px;
+        width: 248px;
+        height: 262px;
         close-policy: close-on-click-outside;
         Picker {
             h <=> root.ph;
@@ -459,6 +682,9 @@ component ThemeTile inherits Rectangle {
     border-color: ta.has-hover ? pr.text.with-alpha(0.45) : pr.panel.mix(pr.text, 0.85);
     animate border-color { duration: 100ms; }
     clip: true;
+    // mini pop: se hunde al pulsar y rebota al soltar; sube un poco al pasar el ratón
+    transform-scale: ta.pressed ? 0.94 : 1;
+    animate transform-scale { duration: 340ms; easing: ease-out-back; }
     // panel con una línea de texto y una barra de acento
     Rectangle {
         x: 7px;
@@ -563,31 +789,143 @@ component Seg inherits Rectangle {
     in property <[string]> items;
     in property <int> current;
     callback picked(int);
+    // posición de la pastilla: la toma de la opción elegida (cada opción la avisa al cambiar)
+    property <length> px;
+    property <length> pw;
+    property <bool> placed;
     height: 26px;
     border-radius: 7px;
     background: Ui.p.base;
     border-width: 1px;
     border-color: Ui.p.frame;
+    // pastilla deslizante
+    Rectangle {
+        x: root.px;
+        y: 2px;
+        width: root.pw;
+        height: parent.height - 4px;
+        border-radius: 5px;
+        background: Ui.p.frame;
+        animate x, width { duration: root.placed ? 260ms : 0ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.08); }
+    }
     HorizontalLayout {
         padding: 2px;
         spacing: 2px;
         for it[k] in root.items: Rectangle {
+            property <bool> sel: k == root.current;
+            function place() {
+                if (self.sel && self.width > 0) {
+                    root.px = self.x;
+                    root.pw = self.width;
+                    root.placed = true;
+                }
+            }
+            changed sel => { self.place(); }
+            changed x => { self.place(); }
+            changed width => { self.place(); }
+            init => { self.place(); }
             border-radius: 5px;
-            background: k == root.current ? Ui.p.frame : (sta.has-hover ? Ui.p.raised : transparent);
+            background: !self.sel && sta.has-hover ? Ui.p.raised.with-alpha(0.6) : transparent;
             min-width: lbl.preferred-width + 20px;
             animate background { duration: 100ms; }
             lbl := Text {
                 text: it;
                 color: k == root.current ? Ui.p.text : Ui.p.muted;
                 font-family: "Archivo Expanded";
-                font-size: 9.5px;
+                font-size: 10px;
                 font-weight: 800;
-                letter-spacing: 0.8px;
+                letter-spacing: 1px;
             }
             sta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => { if (k != root.current) { root.picked(k); } }
             }
+        }
+    }
+}
+
+// Flechas ‹ › y fundidos en los bordes de una fila de temas que se desplaza.
+component RowArrows inherits Rectangle {
+    in-out property <length> pos;
+    in property <length> content;
+    property <length> min-pos: min(0px, root.width - root.content);
+    // animación del desplazamiento: de `from` a `to` en 24 pasos de 15 ms (≈360 ms) con ease-out
+    property <length> from;
+    property <length> to;
+    property <int> n;
+    property <bool> moving: false;
+    public function go(target: length) {
+        root.from = root.pos;
+        root.to = max(root.min-pos, min(0px, target));
+        root.n = 0;
+        root.moving = true;
+    }
+    // suma al destino actual (varios clics o pasos de rueda seguidos se acumulan)
+    public function nudge(d: length) {
+        root.go((root.moving ? root.to : root.pos) + d);
+    }
+    function step() {
+        root.n += 1;
+        if (root.n >= 24) {
+            root.pos = root.to;
+            root.moving = false;
+        } else {
+            root.pos = root.from + (root.to - root.from) * (1 - pow(1 - root.n / 24, 3));
+        }
+    }
+    Timer {
+        interval: 15ms;
+        running: root.moving;
+        triggered => { root.step(); }
+    }
+    property <bool> can-left: root.pos < -1px;
+    property <bool> can-right: root.pos > root.min-pos + 1px;
+    // fundidos
+    Rectangle {
+        x: 0;
+        width: 44px;
+        opacity: root.can-left ? 1 : 0;
+        animate opacity { duration: 160ms; }
+        background: @linear-gradient(90deg, Ui.p.base 0%, Ui.p.base.with-alpha(0) 100%);
+    }
+    Rectangle {
+        x: parent.width - self.width;
+        width: 44px;
+        opacity: root.can-right ? 1 : 0;
+        animate opacity { duration: 160ms; }
+        background: @linear-gradient(270deg, Ui.p.base 0%, Ui.p.base.with-alpha(0) 100%);
+    }
+    for side in [0, 1]: Rectangle {
+        property <bool> on: side == 0 ? root.can-left : root.can-right;
+        x: side == 0 ? 4px : parent.width - self.width - 4px;
+        y: (parent.height - self.height) / 2;
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+        background: ata.has-hover ? Ui.p.frame : Ui.p.panel;
+        border-width: 1px;
+        border-color: Ui.p.frame;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #00000060;
+        opacity: self.on ? 1 : 0;
+        visible: self.opacity > 0.01;
+        transform-scale: ata.pressed ? 0.9 : 1;
+        animate opacity { duration: 160ms; }
+        animate transform-scale { duration: 220ms; easing: ease-out-back; }
+        Path {
+            width: 8px;
+            height: 10px;
+            viewbox-width: 8;
+            viewbox-height: 10;
+            stroke: Ui.p.text;
+            stroke-width: 1.6px;
+            fill: transparent;
+            commands: side == 0 ? "M 6 1 L 2 5 L 6 9" : "M 2 1 L 6 5 L 2 9";
+        }
+        ata := TouchArea {
+            enabled: parent.on;
+            mouse-cursor: pointer;
+            clicked => { root.nudge((side == 0 ? 1 : -1) * 3 * 136px); }
         }
     }
 }
@@ -600,6 +938,9 @@ component Hairline inherits Rectangle {
 
 // Maqueta de After Effects con los colores que se van a escribir.
 component AePreview inherits Rectangle {
+    // pintar la barra de menús y el título de AE: el interruptor está sobre la propia barra de la vista previa
+    in property <bool> menus;
+    callback toggle-menus;
     border-radius: 12px;
     clip: true;
     background: Ui.p.base;
@@ -613,15 +954,41 @@ component AePreview inherits Rectangle {
         Rectangle {
             height: 30px;
             border-radius: 6px;
-            background: Ui.p.frame;
+            // apagado: la barra como la deja Windows
+            background: root.menus ? Ui.p.frame : #2b2b2b;
             HorizontalLayout {
                 padding-left: 10px;
+                padding-right: 6px;
                 spacing: 14px;
                 for m in ["File", "Edit", "Composition", "Layer", "Effect", "Animation", "View", "Window", "Help"]: Text {
                     text: m;
-                    color: Ui.p.text;
+                    color: root.menus ? Ui.p.text : #ffffff;
                     font-size: 11px;
                     vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: tint-row.preferred-width;
+                    border-radius: 5px;
+                    tint-row := HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 6px;
+                        spacing: 8px;
+                        Text {
+                            text: Ui.t("TINT MENU & TITLE", "TINTAR MENÚ Y TÍTULO");
+                            color: tint-ta.has-hover ? (root.menus ? Ui.p.text : #ffffff) : (root.menus ? Ui.p.muted : #b0b0b0);
+                            font-family: "Archivo Expanded";
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 1px;
+                            vertical-alignment: center;
+                        }
+                        VerticalLayout { alignment: center; Switch { on: root.menus; } }
+                    }
+                    tint-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.toggle-menus(); }
+                    }
                 }
             }
         }
@@ -706,6 +1073,8 @@ component AePreview inherits Rectangle {
                 // área de tiempo
                 Rectangle {
                     background: Ui.p.tl-bg;
+                    border-top-right-radius: 6px;
+                    border-bottom-right-radius: 6px;
                     clip: true;
                     // navegador de tiempo
                     Rectangle {
@@ -818,6 +1187,7 @@ export component AppWindow inherits Window {
     }
     in-out property <bool> menus;
     in-out property <bool> autostart;
+    in-out property <bool> watcher;
     in-out property <bool> sounds: true;
     callback toggle-sounds(bool);
 
@@ -831,6 +1201,7 @@ export component AppWindow inherits Window {
     callback rescan();
     callback toggle-menus(bool);
     callback toggle-autostart(bool);
+    callback toggle-watcher(bool);
     callback set-lang(bool);
     // temas guardados por el usuario
     in property <[PresetItem]> themes;
@@ -848,6 +1219,22 @@ export component AppWindow inherits Window {
     in property <float> update-progress;
     callback open-update();
     in-out property <int> lib-tab: 0;
+    property <angle> gear-rot: 0deg;
+    animate gear-rot { duration: 520ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.1); }
+    // al cambiar de pestaña (presets / mis temas) los temas entran con un fundido y un pequeño pop
+    property <bool> lib-in: true;
+    changed lib-tab => {
+        root.lib-in = false;
+        lib-timer.running = true;
+    }
+    lib-timer := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            root.lib-in = true;
+            self.running = false;
+        }
+    }
     // temas en archivos .aetint
     callback import-theme();
     callback export-theme(int);
@@ -861,6 +1248,44 @@ export component AppWindow inherits Window {
     callback win-minimize();
     callback win-maximize();
     callback win-close();
+
+    // fuga de luz que sale del logo (centro en 31,26), animada despacio: el halo deriva y respira, el núcleo late
+    // y un reflejo más claro recorre la cabecera. Todo con el acento del tema.
+    // tiempo de la luz (segundos): lo avanza Rust a ~30 fps y se pausa sin foco o minimizada,
+    // así no obliga a redibujar la ventana a 60 fps todo el rato
+    in property <float> lt;
+    // (manchas ya coloreadas y con tramado, generadas en Rust: solo la zona que se puede ver de cada una; el
+    // pulso de intensidad va en la opacidad)
+    // halo alrededor del logo (radio 540, visible hasta el 70 %)
+    Image {
+        x: 31px + 34px * Math.sin(root.lt * 19deg) - 70px;
+        y: 26px + 24px * Math.cos(root.lt * 14deg) - 60px;
+        width: 448px;
+        height: 438px;
+        source: Ui.glow-image(Ui.p.accent, 0.165, 540, 0, -70, -60, 448, 438);
+        image-fit: fill;
+        opacity: (0.13 + 0.035 * Math.sin(root.lt * 31deg)) / 0.165;
+    }
+    // reflejo más claro que recorre la cabecera (radio 280)
+    Image {
+        x: 300px + 150px * Math.sin(root.lt * 11deg) - 196px;
+        y: 8px + 26px * Math.cos(root.lt * 17deg) - 196px;
+        width: 392px;
+        height: 392px;
+        source: Ui.glow-image(Ui.p.accent.mix(#ffffff, 0.75), 0.075, 280, 1, -196, -196, 392, 392);
+        image-fit: fill;
+        opacity: (0.05 + 0.025 * Math.sin(root.lt * 23deg + 90deg)) / 0.075;
+    }
+    // núcleo que late sobre el logo (radio 160)
+    Image {
+        x: 31px - 112px;
+        y: 26px - 112px;
+        width: 224px;
+        height: 224px;
+        source: Ui.glow-image(Ui.p.accent.mix(#ffffff, 0.8), 0.26, 160, 2, -112, -112, 224, 224);
+        image-fit: fill;
+        opacity: (0.20 + 0.06 * Math.sin(root.lt * 57deg)) / 0.26;
+    }
 
     // barra de título propia: se arrastra y con doble clic se maximiza
     Rectangle {
@@ -884,7 +1309,26 @@ export component AppWindow inherits Window {
             // sitio para los botones de ventana (y la línea que los separa del engranaje)
             padding-right: 112px;
             spacing: 10px;
-            VerticalLayout { alignment: center; Logo { size: 30px; } }
+            VerticalLayout {
+                alignment: center;
+                // sombra del logo: halo del acento + sombra oscura (el logo recorta su contenido, la sombra va aparte)
+                Rectangle {
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 30px * 0.28;
+                    background: Ui.p.accent;
+                    drop-shadow-blur: 18px;
+                    drop-shadow-color: Ui.p.accent.with-alpha(0.55);
+                    Rectangle {
+                        border-radius: 30px * 0.28;
+                        background: Ui.p.accent;
+                        drop-shadow-blur: 6px;
+                        drop-shadow-offset-y: 3px;
+                        drop-shadow-color: #00000090;
+                        Logo { size: 30px; }
+                    }
+                }
+            }
             VerticalLayout {
                 alignment: center;
                 Text {
@@ -946,7 +1390,7 @@ export component AppWindow inherits Window {
                 }
             }
             Rectangle { horizontal-stretch: 1; }
-            // ajustes: menús, inicio con Windows, sonido e idioma
+            // ajustes: inicio con Windows, sonido e idioma
             VerticalLayout {
                 alignment: center;
                 Rectangle {
@@ -954,7 +1398,7 @@ export component AppWindow inherits Window {
                     height: 32px;
                     border-radius: 7px;
                     background: gear-ta.has-hover ? Ui.p.raised : transparent;
-                    // engranaje
+                    // engranaje: gira al abrir los ajustes
                     Path {
                         width: 16px;
                         height: 16px;
@@ -962,11 +1406,15 @@ export component AppWindow inherits Window {
                         viewbox-height: 16;
                         fill: gear-ta.has-hover ? Ui.p.text : Ui.p.text.mix(Ui.p.muted, 0.45);
                         fill-rule: evenodd;
-                        commands: "M 8.00 2.10 L 9.48 0.55 L 10.91 0.98 L 11.28 3.09 L 12.17 3.83 L 14.32 3.78 L 15.02 5.09 L 13.79 6.85 L 13.90 8.00 L 15.45 9.48 L 15.02 10.91 L 12.91 11.28 L 12.17 12.17 L 12.22 14.32 L 10.91 15.02 L 9.15 13.79 L 8.00 13.90 L 6.52 15.45 L 5.09 15.02 L 4.72 12.91 L 3.83 12.17 L 1.68 12.22 L 0.98 10.91 L 2.21 9.15 L 2.10 8.00 L 0.55 6.52 L 0.98 5.09 L 3.09 4.72 L 3.83 3.83 L 3.78 1.68 L 5.09 0.98 L 6.85 2.21 Z M 10.60 8 A 2.6 2.6 0 1 0 5.40 8 A 2.6 2.6 0 1 0 10.60 8 Z";
+                        // la forma ya girada se calcula en Rust: el renderizador por software no gira elementos
+                        commands: Ui.gear-path(root.gear-rot / 1deg);
                     }
                     gear-ta := TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { settings.show(); }
+                        clicked => {
+                            root.gear-rot += 120deg;
+                            settings.show();
+                        }
                     }
                     settings := PopupWindow {
                         x: parent.width - 300px;
@@ -974,6 +1422,21 @@ export component AppWindow inherits Window {
                         width: 300px;
                         close-policy: close-on-click-outside;
                         Rectangle {
+                            property <bool> shown;
+                            init => { set-appear.running = true; }
+                            set-appear := Timer {
+                                interval: 16ms;
+                                running: false;
+                                triggered => {
+                                    parent.shown = true;
+                                    self.running = false;
+                                }
+                            }
+                            opacity: self.shown ? 1 : 0;
+                            transform-origin: { x: self.width - 16px, y: 0px };
+                            transform-scale: self.shown ? 1 : 0.92;
+                            animate opacity { duration: 170ms; easing: ease-out; }
+                            animate transform-scale { duration: 300ms; easing: ease-out-back; }
                             background: Ui.p.panel;
                             border-radius: 10px;
                             border-width: 1px;
@@ -983,16 +1446,21 @@ export component AppWindow inherits Window {
                             VerticalLayout {
                                 padding: 8px;
                                 spacing: 2px;
-                                Text { text: Ui.t("SETTINGS", "AJUSTES"); color: Ui.p.muted; font-family: "Archivo Expanded"; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; height: 24px; vertical-alignment: center; x: 10px; }
-                                OptRow {
-                                    label: Ui.t("Paint File, Edit… and the title bar", "Pintar File, Edit… y el título");
-                                    on: root.menus;
-                                    toggled => { root.toggle-menus(!root.menus); }
+                                // misma sangría que las filas (en un layout la x no se aplica)
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    Text { text: Ui.t("SETTINGS", "AJUSTES"); color: Ui.p.muted; font-family: "Archivo Expanded"; font-size: 11px; font-weight: 800; letter-spacing: 1px; height: 24px; vertical-alignment: center; }
                                 }
                                 OptRow {
-                                    label: Ui.t("Start with Windows", "Activar al iniciar Windows");
-                                    on: root.autostart;
+                                    label: Ui.t("Watchdog for AE without the plugin", "Vigilante para AE sin el plugin");
+                                    on: root.watcher;
                                     enabled: root.menus;
+                                    toggled => { root.toggle-watcher(!root.watcher); }
+                                }
+                                OptRow {
+                                    label: Ui.t("Start the watchdog with Windows", "Iniciar el vigilante con Windows");
+                                    on: root.autostart;
+                                    enabled: root.menus && root.watcher;
                                     toggled => { root.toggle-autostart(!root.autostart); }
                                 }
                                 OptRow {
@@ -1022,8 +1490,6 @@ export component AppWindow inherits Window {
                 }
             }
         }
-        Hairline { }
-
         HorizontalLayout {
             vertical-stretch: 1;
 
@@ -1032,7 +1498,12 @@ export component AppWindow inherits Window {
                 horizontal-stretch: 1;
                 padding: 16px;
                 spacing: 14px;
-                AePreview { vertical-stretch: 1; min-height: 250px; }
+                AePreview {
+                    vertical-stretch: 1;
+                    min-height: 250px;
+                    menus: root.menus;
+                    toggle-menus => { root.toggle-menus(!root.menus); }
+                }
 
                 HorizontalLayout {
                     spacing: 12px;
@@ -1150,9 +1621,9 @@ export component AppWindow inherits Window {
                                 text: Ui.t("SPLASH", "INICIO") + " · " + (root.splash-name == "" ? Ui.t("ADOBE'S", "ADOBE") : Ui.t("YOURS", "TUYO"));
                                 color: root.splash-name == "" ? Ui.p.muted : Ui.p.text;
                                 font-family: "Archivo Expanded";
-                                font-size: 9.5px;
+                                font-size: 10px;
                                 font-weight: 800;
-                                letter-spacing: 0.8px;
+                                letter-spacing: 1px;
                                 vertical-alignment: center;
                             }
                             if root.splash-name != "": VerticalLayout {
@@ -1183,51 +1654,110 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if root.lib-tab == 0: HorizontalLayout {
-                    spacing: 8px;
-                    for pr[i] in root.presets: ThemeTile {
-                        horizontal-stretch: 1;
-                        min-width: 0;
-                        preferred-width: 10px;
-                        pr: pr;
-                        picked => { root.use-preset(i); }
+                if root.lib-tab == 0: Rectangle {
+                    opacity: root.lib-in ? 1 : 0;
+                    transform-scale: root.lib-in ? 1 : 0.97;
+                    animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
+                    animate transform-scale { duration: root.lib-in ? 320ms : 0ms; easing: ease-out-back; }
+                    height: 72px;
+                    pf := Flickable {
+                        height: 72px;
+                        content-width: root.presets.length * 136px - 8px;
+                        TouchArea {
+                            width: max(pf.width, pf.content-width);
+                            height: 72px;
+                            scroll-event(e) => {
+                                pf-arrows.nudge((e.delta-y + e.delta-x) * 1.5);
+                                return accept;
+                            }
+                            for pr[i] in root.presets: ThemeTile {
+                                x: i * 136px;
+                                y: 4px;
+                                width: 128px;
+                                pr: pr;
+                                picked => { root.use-preset(i); }
+                            }
+                        }
+                    }
+                    pf-arrows := RowArrows {
+                        pos <=> pf.content-x;
+                        content: pf.content-width;
                     }
                 }
                 if root.lib-tab == 1 && root.themes.length == 0: Rectangle {
-                    height: 64px;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Ui.p.frame;
+                    opacity: root.lib-in ? 1 : 0;
+                    transform-scale: root.lib-in ? 1 : 0.97;
+                    animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
+                    animate transform-scale { duration: root.lib-in ? 320ms : 0ms; easing: ease-out-back; }
+                    height: 72px;
+                    // mismo alto que una fila de temas (al cambiar de pestaña no se mueve nada)
+                    Rectangle {
+                        y: 4px;
+                        height: 64px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Ui.p.frame;
+                    }
                     Text {
                         text: Ui.t("No saved themes yet. Adjust your colours, name them above and press Save.", "Aún no hay temas guardados. Ajusta tus colores, ponles nombre arriba y pulsa Guardar.");
                         color: Ui.p.muted;
                         font-size: 11.5px;
                     }
                 }
-                if root.lib-tab == 1 && root.themes.length > 0: Flickable {
-                    height: 64px;
-                    content-width: root.themes.length * 136px;
-                    for th[i] in root.themes: ThemeTile {
-                        x: i * 136px;
-                        width: 128px;
-                        pr: th;
-                        deletable: true;
-                        picked => { root.apply-theme(i); }
-                        deleted => { root.delete-theme(i); }
-                        exported => { root.export-theme(i); }
+                if root.lib-tab == 1 && root.themes.length > 0: Rectangle {
+                    opacity: root.lib-in ? 1 : 0;
+                    transform-scale: root.lib-in ? 1 : 0.97;
+                    animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
+                    animate transform-scale { duration: root.lib-in ? 320ms : 0ms; easing: ease-out-back; }
+                    height: 72px;
+                    tf := Flickable {
+                        height: 72px;
+                        content-width: root.themes.length * 136px - 8px;
+                        TouchArea {
+                            width: max(tf.width, tf.content-width);
+                            height: 72px;
+                            scroll-event(e) => {
+                                tf-arrows.nudge((e.delta-y + e.delta-x) * 1.5);
+                                return accept;
+                            }
+                            for th[i] in root.themes: ThemeTile {
+                                x: i * 136px;
+                                y: 4px;
+                                width: 128px;
+                                pr: th;
+                                deletable: true;
+                                picked => { root.apply-theme(i); }
+                                deleted => { root.delete-theme(i); }
+                                exported => { root.export-theme(i); }
+                            }
+                        }
+                    }
+                    tf-arrows := RowArrows {
+                        pos <=> tf.content-x;
+                        content: tf.content-width;
                     }
                 }
             }
 
-            Rectangle { width: 1px; background: Ui.p.frame; }
-
-            // ── inspector
+            // ── inspector: una tarjeta redondeada a la altura de la vista previa
+            VerticalLayout {
+                padding-top: 16px;
+                padding-right: 16px;
+                padding-bottom: 16px;
             Rectangle {
                 width: 330px;
+                vertical-stretch: 1;
                 background: Ui.p.panel;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Ui.p.frame;
+                clip: true;
                 VerticalLayout {
                     // colores
+                    // alturas enteras y sin estirarse: si el layout reparte un sobrante de fracciones de píxel
+                    // entre las filas, todo lo de abajo queda a medio píxel (borroso)
                     VerticalLayout {
+                        vertical-stretch: 0;
                         padding: 14px;
                         padding-bottom: 10px;
                         spacing: 6px;
@@ -1251,6 +1781,7 @@ export component AppWindow inherits Window {
                     Hairline { }
                     // timeline
                     VerticalLayout {
+                        vertical-stretch: 0;
                         padding: 14px;
                         padding-bottom: 10px;
                         spacing: 4px;
@@ -1262,6 +1793,8 @@ export component AppWindow inherits Window {
                             text: Ui.t("Tick a colour to set it by hand.", "Marca un color para fijarlo a mano.");
                             color: Ui.p.muted;
                             font-size: 11px;
+                            height: 16px;
+                            vertical-alignment: center;
                         }
                         VerticalLayout {
                             spacing: 0px;
@@ -1276,6 +1809,7 @@ export component AppWindow inherits Window {
                     Hairline { }
                     // instalar
                     VerticalLayout {
+                        vertical-stretch: 0;
                         padding: 14px;
                         spacing: 8px;
                         Cap { text: Ui.t("INSTALL TO", "INSTALAR EN"); }
@@ -1285,7 +1819,13 @@ export component AppWindow inherits Window {
                             font-size: 11.5px;
                             wrap: word-wrap;
                         }
+                        // con muchas versiones instaladas la lista se desplaza (máximo 4 filas a la vista), así los
+                        // botones de abajo siempre caben
+                        tgt-list := Flickable {
+                            height: min(root.targets.length, 4) * 30px;
+                            content-height: root.targets.length * 30px;
                         VerticalLayout {
+                            width: parent.width;
                             spacing: 0px;
                             for t in root.targets: Rectangle {
                                 height: 30px;
@@ -1313,6 +1853,17 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
+                        // fundido abajo mientras queden versiones por ver
+                        Rectangle {
+                            x: 0;
+                            y: parent.height - self.height;
+                            width: parent.width;
+                            height: 22px;
+                            opacity: tgt-list.content-y > tgt-list.height - tgt-list.content-height + 1px ? 1 : 0;
+                            animate opacity { duration: 160ms; }
+                            background: @linear-gradient(180deg, Ui.p.panel.with-alpha(0) 0%, Ui.p.panel 100%);
+                        }
+                        }
                         HorizontalLayout {
                             spacing: 8px;
                             padding-top: 4px;
@@ -1332,7 +1883,19 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+            }
         }
+    }
+
+    // la misma luz, muy tenue, por encima del contenido (no recibe clics)
+    // (imagen con tramado: el degradado radial del renderizador por software hacía anillos)
+    Image {
+        x: 31px + 34px * Math.sin(root.lt * 19deg) - 70px;
+        y: 26px + 24px * Math.cos(root.lt * 14deg) - 60px;
+        width: 322px;
+        height: 312px;
+        source: Ui.glow-image(Ui.p.accent, 0.07, 420, 3, -70, -60, 322, 312);
+        image-fit: fill;
     }
 
     // aviso de estado, centrado en la ventana
@@ -1453,16 +2016,6 @@ export component AppWindow inherits Window {
         WinBtn { kind: 0; clicked => { root.win-minimize(); } }
         WinBtn { kind: 1; maxed: root.is-max; clicked => { root.win-maximize(); } }
         WinBtn { kind: 2; clicked => { root.win-close(); } }
-    }
-
-    // borde fino de la ventana
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: root.width;
-        height: root.height;
-        border-width: root.is-max ? 0 : 1px;
-        border-color: Ui.p.frame;
     }
 
     // bordes para cambiar el tamaño (0 N, 1 S, 2 E, 3 O, 4 NE, 5 NO, 6 SE, 7 SO)

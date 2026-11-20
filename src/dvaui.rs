@@ -53,9 +53,12 @@ pub struct Dvaui {
 
 /// Formato anterior a 2025: "DROVER" (colorThemes.light/dark/darkest), "DNA-VARS-REDUCED" (light/dark/darkest)
 /// y "VARIABLES" (tokens con sets por brillo).
+/// AE 2020/2021 no tienen "DROVER": sus colores van en "DNA-VARS" y "DNA-VARS-LINKED" (light/dark/darkest con
+/// tokens `spectrum-…`); entonces `drover` es `None`, `reduced` es DNA-VARS y `linked` DNA-VARS-LINKED.
 pub struct Legacy {
-    pub drover: Resource,
+    pub drover: Option<Resource>,
     pub reduced: Option<Resource>,
+    pub linked: Option<Resource>,
     pub variables: Option<Resource>,
     pub tones: Vec<(Kind, ToneRef)>,
 }
@@ -87,6 +90,38 @@ fn legacy_tone(m: &serde_json::Map<String, Value>, kind: Kind) -> Option<ToneRef
         frame: g(FRAME),
         accent: c("accent-background-color-default")?,
     })
+}
+
+/// Los grises de referencia de un bloque de DNA-VARS (AE 2020/2021): la escala `spectrum-global-color-gray-*`
+/// (fondo, elevado y paneles) y el color de foco como acento.
+fn dna_tone(m: &serde_json::Map<String, Value>, kind: Kind) -> Option<ToneRef> {
+    let c = |n: &str| m.get(n).and_then(Value::as_str).and_then(color::parse_css).map(|x| x.0);
+    let g = |n: &str| c(&format!("spectrum-global-color-{n}")).filter(|x| color::is_grey(*x)).map(|x| x[0]);
+    let (base, raised, panel) = if kind == Kind::Light {
+        (g("gray-200")?, g("gray-75")?, g("gray-50")?)
+    } else {
+        (g("gray-50")?, g("gray-75")?, g("gray-100")?)
+    };
+    Some(ToneRef {
+        base,
+        panel,
+        raised,
+        label: if kind == Kind::Light { 80.0 / 255.0 } else { 176.0 / 255.0 },
+        heading: c("spectrum-alias-heading-text-color").filter(|x| color::is_grey(*x)).map(|x| x[0]),
+        frame: None,
+        accent: c("spectrum-alias-focus-color")?,
+    })
+}
+
+/// ¿Un color del tono del acento de Adobe? (DNA-VARS no marca los colores de acento por nombre: los azules
+/// saturados con el mismo tono que el acento de referencia se llevan al acento nuevo)
+fn near_accent(c: Rgb, accent: Rgb) -> bool {
+    let (k, a) = (color::to_oklch(c), color::to_oklch(accent));
+    let mut d = (k[2] - a[2]).abs();
+    if d > std::f32::consts::PI {
+        d = 2.0 * std::f32::consts::PI - d;
+    }
+    k[1] > 0.08 && d < 0.35
 }
 
 fn cstr(b: &[u8], o: usize) -> Option<&str> {
@@ -186,7 +221,9 @@ impl Dvaui {
 
     fn open_legacy(b: &[u8], res: &[Resource]) -> Result<Dvaui, String> {
         let get = |n: &str| res.iter().find(|r| r.is("JSON", n)).cloned();
-        let drover = get("DROVER").ok_or(tr!("no colour tokens found in dvaui.dll (unsupported version)", "no se encontraron los tokens de color en dvaui.dll (versión no compatible)"))?;
+        let Some(drover) = get("DROVER") else {
+            return Self::open_dna(b, res);
+        };
         let j = res_json(b, &drover).ok_or_else(|| tr!("DROVER: unreadable JSON", "DROVER: JSON ilegible"))?;
         let mut tones = Vec::new();
         for (name, kind) in BLOCKS {
@@ -210,7 +247,40 @@ impl Dvaui {
             version: pe::file_version(b, res),
             dna: get("DROVER-DNA-VARS"),
             css,
-            legacy: Some(Legacy { drover, reduced: get("DNA-VARS-REDUCED"), variables: get("VARIABLES"), tones }),
+            legacy: Some(Legacy { drover: Some(drover), reduced: get("DNA-VARS-REDUCED"), linked: None, variables: get("VARIABLES"), tones }),
+        })
+    }
+
+    /// AE 2020/2021: sin "DROVER"; los colores están en "DNA-VARS" (y sus referencias en "DNA-VARS-LINKED").
+    fn open_dna(b: &[u8], res: &[Resource]) -> Result<Dvaui, String> {
+        let get = |n: &str| res.iter().find(|r| r.is("JSON", n)).cloned();
+        let vars = get("DNA-VARS").ok_or(tr!("no colour tokens found in dvaui.dll (unsupported version)", "no se encontraron los tokens de color en dvaui.dll (versión no compatible)"))?;
+        let j = res_json(b, &vars).ok_or_else(|| tr!("DNA-VARS: unreadable JSON", "DNA-VARS: JSON ilegible"))?;
+        let mut tones = Vec::new();
+        for (name, kind) in BLOCKS {
+            if let Some(Value::Object(m)) = j.get(name) {
+                if let Some(t) = dna_tone(m, kind) {
+                    tones.push((kind, t));
+                }
+            }
+        }
+        if !tones.iter().any(|(k, _)| *k != Kind::Light) {
+            return Err(tr!("no dark tables with the original greys (is a theme already applied?)", "no hay tablas oscuras con los grises originales (¿el archivo ya tiene un tema aplicado?)"));
+        }
+        let css = res
+            .iter()
+            .filter(|r| matches!(r.path.first(), Some(ResKey::Name(t)) if t == "CSS") && matches!(r.path.get(1), Some(ResKey::Name(n)) if n == "SPECTRUM_DARK"))
+            .cloned()
+            .collect();
+        // los colores propios de dvaui (barras de scroll, celdas): "DROVER-DNA-VARS" en 2021, "DROVER-VARS" en 2020
+        let dna = get("DROVER-DNA-VARS").or_else(|| get("DROVER-VARS"));
+        Ok(Dvaui {
+            names: Vec::new(),
+            tables: Vec::new(),
+            version: pe::file_version(b, res),
+            dna,
+            css,
+            legacy: Some(Legacy { drover: None, reduced: Some(vars), linked: get("DNA-VARS-LINKED"), variables: None, tones }),
         })
     }
 
@@ -366,6 +436,8 @@ impl Dvaui {
                 Some((*name, GreyMap::new(&t, p), t, p))
             })
             .collect();
+        // AE 2020/2021 (sin DROVER): los acentos se reconocen por su tono, no por el nombre
+        let dna_only = l.drover.is_none();
         let recolor = |name: &str, s: &mut String, block: &str| {
             let Some((_, map, tone, p)) = maps.iter().find(|m| m.0 == block) else { return };
             let Some((c, alpha)) = color::parse_css(s) else { return };
@@ -373,7 +445,8 @@ impl Dvaui {
             if alpha.as_deref().is_some_and(|a| a.parse::<f32>().map_or(true, |x| x < 1.0)) {
                 return;
             }
-            let new = if is_accent(name) && !color::is_grey(c) {
+            let accent = !color::is_grey(c) && (is_accent(name) || (dna_only && near_accent(c, tone.accent)));
+            let new = if accent {
                 shift_accent(c, tone.accent, p.accent)
             } else if color::is_grey(c) && !keep_grey(name) {
                 map.map((c[0] + c[1] + c[2]) / 3.0)
@@ -402,13 +475,16 @@ impl Dvaui {
             }
         };
         // DROVER: colorThemes.<brillo>.<token>
-        patch(&l.drover, &mut |v| {
-            if let Some(t) = v.get_mut("colorThemes") {
-                flat(t, "");
-            }
-        })?;
-        // DNA-VARS-REDUCED: <brillo>.spectrum-<componente>-…
-        if let Some(r) = &l.reduced {
+        if let Some(r) = &l.drover {
+            patch(r, &mut |v| {
+                if let Some(t) = v.get_mut("colorThemes") {
+                    flat(t, "");
+                }
+            })?;
+        }
+        // DNA-VARS-REDUCED (2022–2024) o DNA-VARS y DNA-VARS-LINKED (2020/2021): <brillo>.spectrum-<componente>-…
+        // (en LINKED casi todo son referencias "$spectrum-…", que no se tocan; solo los colores literales)
+        for r in [&l.reduced, &l.linked].into_iter().flatten() {
             patch(r, &mut |v| flat(v, "spectrum-"))?;
         }
         // VARIABLES: <token>.sets.<brillo>.value (puede anidarse)

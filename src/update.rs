@@ -29,13 +29,8 @@ pub fn check() -> Option<Update> {
     if let Ok(v) = std::env::var("AETINT_FAKE_LATEST") {
         return is_newer(&v, CURRENT).then(|| Update { version: v.trim_start_matches('v').to_string(), url: format!("https://github.com/{REPO}/releases/latest"), setup_url: None, sha_url: None });
     }
-    let resp = ureq::get(&format!("https://api.github.com/repos/{REPO}/releases/latest"))
-        .set("User-Agent", &format!("AeTint/{CURRENT}"))
-        .set("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(8))
-        .call()
-        .ok()?;
-    let v: serde_json::Value = resp.into_json().ok()?;
+    let resp = http::get(&format!("https://api.github.com/repos/{REPO}/releases/latest"), &[("Accept", "application/vnd.github+json")], 8_000).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&resp.text().ok()?).ok()?;
     let tag = v["tag_name"].as_str()?;
     let url = v["html_url"].as_str().unwrap_or("").to_string();
     let asset = |name: &str| {
@@ -61,16 +56,14 @@ pub fn download(up: &Update, progress: impl Fn(f32)) -> Result<std::path::PathBu
     if !github(setup) || !github(sha) {
         return Err(tr!("unexpected download address", "dirección de descarga inesperada"));
     }
-    let agent = format!("AeTint/{CURRENT}");
-    let get = |u: &str| ureq::get(u).set("User-Agent", &agent).timeout(std::time::Duration::from_secs(120)).call().map_err(|e| e.to_string());
-    let expected = get(sha)?.into_string().map_err(|e| e.to_string())?;
+    let get = |u: &str| http::get(u, &[], 120_000);
+    let expected = get(sha)?.text()?;
     let expected = expected.split_whitespace().next().unwrap_or("").to_lowercase();
     if expected.len() != 64 {
         return Err(tr!("invalid checksum file", "archivo de comprobación no válido"));
     }
-    let resp = get(setup)?;
-    let total: Option<usize> = resp.header("Content-Length").and_then(|v| v.parse().ok());
-    let mut reader = resp.into_reader();
+    let mut reader = get(setup)?;
+    let total: Option<usize> = reader.len;
     let mut data = Vec::with_capacity(total.unwrap_or(0));
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -108,6 +101,120 @@ pub fn open(url: &str) {
         if url.starts_with("https://") {
             ShellExecuteW(std::ptr::null_mut(), w("open").as_ptr(), w(url).as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
         }
+    }
+}
+
+/// GET por HTTPS con WinHTTP, el cliente de Windows (certificados y proxy del sistema): así el .exe no
+/// lleva su propia pila TLS. Sigue las redirecciones (las descargas de GitHub redirigen a su CDN).
+#[cfg(windows)]
+mod http {
+    use windows_sys::Win32::Networking::WinHttp::*;
+    type H = *mut core::ffi::c_void;
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
+    }
+
+    pub struct Response {
+        handles: [H; 3],
+        /// Content-Length, si el servidor lo da
+        pub len: Option<usize>,
+    }
+
+    impl Drop for Response {
+        fn drop(&mut self) {
+            for h in self.handles.iter().rev() {
+                if !h.is_null() {
+                    unsafe { WinHttpCloseHandle(*h) };
+                }
+            }
+        }
+    }
+
+    impl std::io::Read for Response {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let mut n = 0u32;
+            let ok = unsafe { WinHttpReadData(self.handles[2], buf.as_mut_ptr() as _, buf.len().min(u32::MAX as usize) as u32, &mut n) };
+            if ok == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(n as usize)
+        }
+    }
+
+    impl Response {
+        pub fn text(mut self) -> Result<String, String> {
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut self, &mut s).map_err(|e| e.to_string())?;
+            Ok(s)
+        }
+    }
+
+    fn query_number(req: H, info: u32) -> Option<u32> {
+        let (mut v, mut size) = (0u32, 4u32);
+        let ok = unsafe { WinHttpQueryHeaders(req, info | WINHTTP_QUERY_FLAG_NUMBER, std::ptr::null(), &mut v as *mut u32 as _, &mut size, std::ptr::null_mut()) };
+        (ok != 0).then_some(v)
+    }
+
+    pub fn get(url: &str, headers: &[(&str, &str)], timeout_ms: i32) -> Result<Response, String> {
+        let rest = url.strip_prefix("https://").ok_or("only https")?;
+        let (host, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
+        let err = |what: &str| format!("{what}: {}", std::io::Error::last_os_error());
+        let mut r = Response { handles: [std::ptr::null_mut(); 3], len: None };
+        unsafe {
+            let agent = wide(&format!("AeTint/{}", super::CURRENT));
+            r.handles[0] = WinHttpOpen(agent.as_ptr(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, std::ptr::null(), std::ptr::null(), 0);
+            if r.handles[0].is_null() {
+                return Err(err("WinHttpOpen"));
+            }
+            WinHttpSetTimeouts(r.handles[0], timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+            r.handles[1] = WinHttpConnect(r.handles[0], wide(host).as_ptr(), 443, 0);
+            if r.handles[1].is_null() {
+                return Err(err("WinHttpConnect"));
+            }
+            r.handles[2] = WinHttpOpenRequest(r.handles[1], wide("GET").as_ptr(), wide(&path).as_ptr(), std::ptr::null(), std::ptr::null(), std::ptr::null(), WINHTTP_FLAG_SECURE);
+            if r.handles[2].is_null() {
+                return Err(err("WinHttpOpenRequest"));
+            }
+            let req = r.handles[2];
+            let extra: String = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
+            if !extra.is_empty() {
+                let w = wide(&extra);
+                WinHttpAddRequestHeaders(req, w.as_ptr(), u32::MAX, WINHTTP_ADDREQ_FLAG_ADD);
+            }
+            if WinHttpSendRequest(req, std::ptr::null(), 0, std::ptr::null(), 0, 0, 0) == 0 {
+                return Err(err("WinHttpSendRequest"));
+            }
+            if WinHttpReceiveResponse(req, std::ptr::null_mut()) == 0 {
+                return Err(err("WinHttpReceiveResponse"));
+            }
+            let status = query_number(req, WINHTTP_QUERY_STATUS_CODE).unwrap_or(0);
+            if !(200..300).contains(&status) {
+                return Err(format!("HTTP {status}"));
+            }
+            r.len = query_number(req, WINHTTP_QUERY_CONTENT_LENGTH).map(|n| n as usize);
+        }
+        Ok(r)
+    }
+}
+
+#[cfg(not(windows))]
+mod http {
+    pub struct Response {
+        pub len: Option<usize>,
+    }
+    impl std::io::Read for Response {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Ok(0)
+        }
+    }
+    impl Response {
+        pub fn text(self) -> Result<String, String> {
+            Err("unsupported".into())
+        }
+    }
+    pub fn get(_: &str, _: &[(&str, &str)], _: i32) -> Result<Response, String> {
+        Err("unsupported".into())
     }
 }
 

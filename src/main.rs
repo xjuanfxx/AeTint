@@ -55,6 +55,18 @@ fn presets() -> Vec<(&'static str, Palette, Palette)> {
         ("Nord", p("#20242C", "#2E3440", "#3B4252", "#272C36", "#D8DEE9", "#88C0D0"), p("#D8DEE9", "#ECEFF4", "#C8D0DC", "#E5E9F0", "#2E3440", "#5E81AC")),
         // Gruvbox Light
         ("Gruvbox", p("#141617", "#282828", "#3C3836", "#1D2021", "#EBDBB2", "#D79921"), p("#EBDBB2", "#FBF1C7", "#D5C4A1", "#F2E5BC", "#3C3836", "#B57614")),
+        // Alucard
+        ("Dracula", p("#191A21", "#282A36", "#44475A", "#21222C", "#F8F8F2", "#BD93F9"), p("#DEDCCF", "#FFFBEB", "#CFCFDE", "#F5F1E0", "#1F1F1F", "#644AC9")),
+        // One Light
+        ("One Dark", p("#181A1F", "#282C34", "#3E4451", "#21252B", "#ABB2BF", "#61AFEF"), p("#E5E5E6", "#FAFAFA", "#D4D4D6", "#F0F0F1", "#383A42", "#4078F2")),
+        ("Monokai", p("#1E1F1C", "#272822", "#3E3D32", "#22231E", "#F8F8F2", "#A6E22E"), p("#E8E6DA", "#FAFAF8", "#D6D4C8", "#F2F1EC", "#272822", "#6A9C10")),
+        ("Solarized", p("#00212B", "#002B36", "#073642", "#00252F", "#93A1A1", "#268BD2"), p("#EEE8D5", "#FDF6E3", "#E0DAC6", "#F5EFDC", "#586E75", "#268BD2")),
+        ("GitHub", p("#010409", "#0D1117", "#21262D", "#161B22", "#E6EDF3", "#2F81F7"), p("#EAEEF2", "#FFFFFF", "#D0D7DE", "#F6F8FA", "#1F2328", "#0969DA")),
+        ("Everforest", p("#1E2326", "#2D353B", "#3D484D", "#272E33", "#D3C6AA", "#A7C080"), p("#EFEBD4", "#FDF6E3", "#E0DCC7", "#F4F0D9", "#5C6A72", "#8DA101")),
+        // Kanagawa Lotus
+        ("Kanagawa", p("#16161D", "#1F1F28", "#363646", "#1A1A22", "#DCD7BA", "#7E9CD8"), p("#E5DDB0", "#F2ECBC", "#DCD5AC", "#E7DBA0", "#545464", "#4D699B")),
+        // Ayu Mirage / Ayu Light
+        ("Ayu", p("#171B24", "#1F2430", "#2A3040", "#1C212B", "#CCCAC2", "#FFCC66"), p("#E7EAED", "#FCFCFC", "#D8DCE0", "#F3F4F5", "#5C6166", "#FA8D3E")),
         (t("Graphite", "Grafito"), p("#0A0A0A", "#171717", "#2A2A2A", "#101010", "#D4D4D4", "#E5484D"), p("#E4E4E4", "#F7F7F7", "#D2D2D2", "#EFEFEF", "#262626", "#E5484D")),
         // los grises de Adobe: aplicarlo deja After Effects como viene
         (t("AE original", "Original de AE"), p("#000000", "#1D1D1D", "#343434", "#0E0E0E", "#B0B0B0", "#066CE7"), p("#E6E6E6", "#FFFFFF", "#E6E6E6", "#F8F8F8", "#505050", "#0265DC")),
@@ -78,6 +90,66 @@ fn group_label(id: &str, en: &'static str) -> &'static str {
         "layersel" => t(en, "Capa activa"),
         _ => en,
     }
+}
+
+// ── transición de colores: al cambiar entre oscuro y claro o al cargar un tema, la ventana pasa de unos colores a
+// otros en un fundido corto en vez de saltar. Mientras se arrastra un color se cambia al instante.
+thread_local! {
+    static FADE_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FADE: RefCell<Option<(Preview, Preview, std::time::Instant)>> = const { RefCell::new(None) };
+    static FADE_TIMER: slint::Timer = slint::Timer::default();
+}
+
+/// La próxima actualización de colores se hace con transición.
+fn fade_next() {
+    FADE_NEXT.with(|f| f.set(true));
+}
+
+const FADE_MS: f32 = 320.0;
+
+fn mix_preview(a: &Preview, b: &Preview, t: f32) -> Preview {
+    // Color::mix(otro, f) da f del propio color: aquí t es cuánto se ha avanzado hacia b
+    let m = |x: Color, y: Color| y.mix(&x, t);
+    macro_rules! all {
+        ($($f:ident),*) => { Preview { $($f: m(a.$f, b.$f)),* } };
+    }
+    all!(base, panel, frame, raised, text, muted, accent, on_accent, tl_bg, grid, ruler, ruler_border, nav, work, work_edge, cti, layer, layer_sel, key_sel)
+}
+
+fn show_preview(ui: &AppWindow, target: Preview) {
+    let g = ui.global::<Ui>();
+    if !FADE_NEXT.with(|f| f.replace(false)) {
+        FADE.with(|f| *f.borrow_mut() = None);
+        FADE_TIMER.with(|t| t.stop());
+        g.set_p(target);
+        return;
+    }
+    let from = g.get_p();
+    FADE.with(|f| *f.borrow_mut() = Some((from, target, std::time::Instant::now())));
+    let weak = ui.as_weak();
+    FADE_TIMER.with(|t| {
+        t.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(8), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let step = FADE.with(|f| {
+                let f = f.borrow();
+                let (a, b, t0) = f.as_ref()?;
+                let x = (t0.elapsed().as_secs_f32() * 1000.0 / FADE_MS).min(1.0);
+                // ease-in-out cúbica
+                let e = if x < 0.5 { 4.0 * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powi(3) / 2.0 };
+                Some((if x >= 1.0 { b.clone() } else { mix_preview(a, b, e) }, x >= 1.0))
+            });
+            match step {
+                Some((p, done)) => {
+                    ui.global::<Ui>().set_p(p);
+                    if done {
+                        FADE.with(|f| *f.borrow_mut() = None);
+                        FADE_TIMER.with(|t| t.stop());
+                    }
+                }
+                None => FADE_TIMER.with(|t| t.stop()),
+            }
+        });
+    });
 }
 
 fn slint_color(c: color::Rgb) -> Color {
@@ -168,7 +240,11 @@ fn status_action(ui: &AppWindow, app: &App) {
 
 #[cfg(windows)]
 fn round_corners(w: &slint::winit_030::winit::window::Window) {
+    use slint::winit_030::winit::platform::windows::{CornerPreference, WindowExtWindows};
     use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    // Esquinas redondeadas de Windows 11. Sin `set_undecorated_shadow`: con esa sombra, en ventana (no maximizada)
+    // la imagen se mostraba 1 px aplastada en vertical y todo quedaba borroso a medio píxel.
+    w.set_corner_preference(CornerPreference::Round);
     if let Ok(h) = w.window_handle() {
         if let RawWindowHandle::Win32(h) = h.as_raw() {
             let pref: u32 = 2; // DWMWCP_ROUND
@@ -180,6 +256,35 @@ fn round_corners(w: &slint::winit_030::winit::window::Window) {
 }
 #[cfg(not(windows))]
 fn round_corners(_: &slint::winit_030::winit::window::Window) {}
+
+/// Quita el borde de 1 px que Windows 11 dibuja alrededor de la ventana (una línea gris del sistema que no
+/// casa con el tema); las esquinas redondeadas y la sombra se mantienen.
+fn window_border(ui: &AppWindow) {
+    #[cfg(windows)]
+    {
+        use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use slint::winit_030::{winit, WinitWindowAccessor};
+        let rgb: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
+        ui.window().with_winit_window(|w: &winit::window::Window| {
+            if let Ok(h) = w.window_handle() {
+                if let RawWindowHandle::Win32(h) = h.as_raw() {
+                    unsafe {
+                        // DWMWA_BORDER_COLOR
+                        windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(h.hwnd.get() as _, 34, &rgb as *const u32 as *const _, 4);
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Renderizador por software de Slint en todas las escalas: sin GPU, poca memoria y nítido también con escala
+/// fraccionaria (125 %, 150 %). `SLINT_BACKEND` puesto a mano manda.
+fn pick_renderer() {
+    if std::env::var_os("SLINT_BACKEND").is_none() {
+        std::env::set_var("SLINT_BACKEND", "winit-software");
+    }
+}
 
 /// ¿El tema es el de After Effects tal cual (preset «AE original»)? Entonces los menús y la barra de título
 /// se dejan como los pinta Windows: la DLL no toca nada.
@@ -212,6 +317,7 @@ fn import_file(ui: &AppWindow, app: &Rc<RefCell<App>>, changed: &dyn Fn(), path:
                     a.cfg.light = l;
                 }
                 a.cfg.overrides = t.overrides.clone();
+                fade_next();
                 ui.set_themes(theme_items(&a.themes, a.edit_light));
             }
             changed();
@@ -321,7 +427,7 @@ fn refresh(ui: &AppWindow, app: &App) {
     ui.set_edit_light(app.edit_light);
     let get = |k: &str, fb: color::Rgb| pv.get(k).copied().unwrap_or(fb);
     let on_accent = if color::contrast(pal.accent, [0.0; 3]) > color::contrast(pal.accent, [1.0; 3]) { [0.05; 3] } else { [1.0; 3] };
-    ui.global::<Ui>().set_p(Preview {
+    show_preview(ui, Preview {
         base: slint_color(pal.base),
         panel: slint_color(pal.panel),
         frame: slint_color(pal.frame),
@@ -377,9 +483,11 @@ fn refresh(ui: &AppWindow, app: &App) {
         .collect();
     set_rows(ui.get_timeline(), tl, |m| ui.set_timeline(m));
 
+    // las versiones más nuevas primero: con muchas instaladas la lista se desplaza y arriba quedan las de uso diario
     let ts: Vec<TargetItem> = app
         .targets
         .iter()
+        .rev()
         .map(|t| TargetItem {
             id: t.id.clone().into(),
             label: t.label.replacen("After Effects", "AE", 1).into(),
@@ -408,7 +516,9 @@ fn scan_status(ui: &AppWindow, targets: Vec<Target>) {
                 } else if f == FileKind::Dvaui && dvaui::Dvaui::open(&b).is_err() {
                     foreign = true;
                 }
-                if f == FileKind::Dvaui {
+                // la versión de After Effects es la de AfterFXLib.dll (en 2020/2021 dvaui.dll lleva otra numeración,
+                // la del framework compartido con Premiere: 14.9 y 15.4)
+                if f == FileKind::AeLib {
                     if let Ok(p) = pe::Pe::parse(&b) {
                         ver = pe::file_version(&b, &p.resources(&b));
                     }
@@ -556,6 +666,7 @@ fn main() -> Result<(), slint::PlatformError> {
         return Ok(());
     }
 
+    pick_renderer();
     let ui = AppWindow::new()?;
     let mut cfg = install::load_config();
     i18n::set_lang(&cfg.lang);
@@ -603,6 +714,137 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let g = ui.global::<Ui>();
         g.on_hsv_color(|h, s, v| slint_color(hsv_to_rgb(h, s, v)));
+        g.on_track_image(|kind, h, sl, l| {
+            // HSL → RGB
+            fn hsl(h: f32, s: f32, l: f32) -> color::Rgb {
+                let v = l + s * l.min(1.0 - l);
+                let sv = if v <= 0.0 { 0.0 } else { 2.0 * (1.0 - l / v) };
+                hsv_to_rgb(h, sv, v)
+            }
+            const W: u32 = 128;
+            let mut buf = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(W, 1);
+            for (x, px) in buf.make_mut_slice().iter_mut().enumerate() {
+                let t = x as f32 / (W - 1) as f32;
+                let c = match kind {
+                    0 => hsv_to_rgb(t.min(0.999), 1.0, 1.0),
+                    1 => hsl(h, t, l.clamp(0.15, 0.85)),
+                    _ => hsl(h, sl, t),
+                };
+                let c = color::to_u8(c);
+                *px = slint::Rgb8Pixel { r: c[0], g: c[1], b: c[2] };
+            }
+            slint::Image::from_rgb8(buf)
+        });
+        // engranaje girado: los dientes giran alrededor del centro (8,8); el agujero central es un círculo
+        g.on_gear_path(|deg| {
+            const PTS: [(f32, f32); 32] = [
+                (8.00, 2.10), (9.48, 0.55), (10.91, 0.98), (11.28, 3.09), (12.17, 3.83), (14.32, 3.78), (15.02, 5.09), (13.79, 6.85),
+                (13.90, 8.00), (15.45, 9.48), (15.02, 10.91), (12.91, 11.28), (12.17, 12.17), (12.22, 14.32), (10.91, 15.02), (9.15, 13.79),
+                (8.00, 13.90), (6.52, 15.45), (5.09, 15.02), (4.72, 12.91), (3.83, 12.17), (1.68, 12.22), (0.98, 10.91), (2.21, 9.15),
+                (2.10, 8.00), (0.55, 6.52), (0.98, 5.09), (3.09, 4.72), (3.83, 3.83), (3.78, 1.68), (5.09, 0.98), (6.85, 2.21),
+            ];
+            let (sn, cs) = deg.to_radians().sin_cos();
+            let mut out = String::with_capacity(600);
+            for (i, (x, y)) in PTS.iter().enumerate() {
+                let (dx, dy) = (x - 8.0, y - 8.0);
+                let (rx, ry) = (8.0 + dx * cs - dy * sn, 8.0 + dx * sn + dy * cs);
+                out.push_str(&format!("{} {rx:.2} {ry:.2} ", if i == 0 { "M" } else { "L" }));
+            }
+            out.push_str("Z M 10.60 8 A 2.6 2.6 0 1 0 5.40 8 A 2.6 2.6 0 1 0 10.60 8 Z");
+            out.into()
+        });
+        // luz del logo: una mancha radial ya coloreada, a la resolución real de la pantalla y con un tramado fino
+        // (dithering) para que el degradado no haga escalones. Solo se genera la zona `x0,y0,w,h` (en px lógicos,
+        // relativa al centro) que puede llegar a verse; se vuelve a generar al cambiar el color o la escala.
+        // `kind` elige los cortes del degradado (0 halo, 1 reflejo, 2 núcleo, 3 velo sobre el contenido).
+        {
+            let weak = ui.as_weak();
+            g.on_glow_image(move |color, peak, radius, kind, x0, y0, w, h| {
+                let scale = weak.upgrade().map(|u| u.window().scale_factor()).unwrap_or(1.0);
+                let (pw, ph) = ((w * scale).round().max(1.0) as u32, (h * scale).round().max(1.0) as u32);
+                let stops: &[(f32, f32)] = match kind {
+                    0 => &[(0.0, 1.0), (0.34, 0.346), (0.7, 0.0)],
+                    1 => &[(0.0, 1.0), (0.7, 0.0)],
+                    3 => &[(0.0, 1.0), (0.6, 0.0)],
+                    _ => &[(0.0, 1.0), (0.4, 0.3), (0.7, 0.0)],
+                };
+                let profile = |r: f32| -> f32 {
+                    for win in stops.windows(2) {
+                        let ((r0, a0), (r1, a1)) = (win[0], win[1]);
+                        if r <= r1 {
+                            return a0 + (a1 - a0) * ((r - r0) / (r1 - r0)).clamp(0.0, 1.0);
+                        }
+                    }
+                    0.0
+                };
+                // ruido triangular determinista por píxel, en [-1, 1]
+                let noise = |x: u32, y: u32, k: u32| -> f32 {
+                    let h = |mut v: u32| {
+                        v ^= v >> 16;
+                        v = v.wrapping_mul(0x7feb_352d);
+                        v ^= v >> 15;
+                        v = v.wrapping_mul(0x846c_a68b);
+                        v ^ (v >> 16)
+                    };
+                    let a = h(x.wrapping_mul(1973) ^ y.wrapping_mul(9277) ^ k.wrapping_mul(26699)) as f32 / u32::MAX as f32;
+                    let b = h(a.to_bits() ^ 0x9e37_79b9) as f32 / u32::MAX as f32;
+                    a + b - 1.0
+                };
+                let (r, gc, b) = (color.red(), color.green(), color.blue());
+                let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(pw, ph);
+                for (i, px) in buf.make_mut_slice().iter_mut().enumerate() {
+                    let (ix, iy) = (i as u32 % pw, i as u32 / pw);
+                    let lx = x0 + (ix as f32 + 0.5) / scale;
+                    let ly = y0 + (iy as f32 + 0.5) / scale;
+                    let f = profile((lx * lx + ly * ly).sqrt() / radius);
+                    let a = if f > 0.0 { (peak * f * 255.0 + noise(ix, iy, kind as u32) * 1.6).clamp(0.0, 255.0) } else { 0.0 };
+                    *px = slint::Rgba8Pixel { r, g: gc, b, a: a.round() as u8 };
+                }
+                slint::Image::from_rgba8(buf)
+            });
+        }
+        // fondo del logo: cuadrado redondeado con el degradado del acento, a la resolución real de la pantalla
+        // (el renderizador por software no redondea un relleno con degradado)
+        {
+            let weak = ui.as_weak();
+            g.on_logo_image(move |accent, size| {
+                let scale = weak.upgrade().map(|u| u.window().scale_factor()).unwrap_or(1.0);
+                let n = (size * scale).round().max(2.0) as u32;
+                let (c0, c1, c2) = (accent.brighter(0.35), accent, accent.darker(0.45));
+                let lerp = |a: slint::Color, b: slint::Color, t: f32| {
+                    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+                    (m(a.red(), b.red()), m(a.green(), b.green()), m(a.blue(), b.blue()))
+                };
+                let rad = n as f32 * 0.28;
+                let half = n as f32 / 2.0;
+                let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(n, n);
+                for (i, px) in buf.make_mut_slice().iter_mut().enumerate() {
+                    let (x, y) = ((i as u32 % n) as f32 + 0.5, (i as u32 / n) as f32 + 0.5);
+                    // distancia con signo al cuadrado redondeado: alfa con bordes suaves
+                    let qx = (x - half).abs() - (half - rad);
+                    let qy = (y - half).abs() - (half - rad);
+                    let d = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt() + qx.max(qy).min(0.0) - rad;
+                    let a = (0.5 - d).clamp(0.0, 1.0);
+                    let t = (x + y) / (2.0 * n as f32);
+                    let (r, g, b) = if t < 0.5 { lerp(c0, c1, t * 2.0) } else { lerp(c1, c2, (t - 0.5) * 2.0) };
+                    *px = slint::Rgba8Pixel { r, g, b, a: (a * 255.0).round() as u8 };
+                }
+                slint::Image::from_rgba8(buf)
+            });
+        }
+        g.on_sv_image(|h| {
+            // en un tono fijo el color varía de forma bilineal con S y V: 64×64 se escala sin que se note
+            const N: u32 = 64;
+            let mut buf = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(N, N);
+            let px = buf.make_mut_slice();
+            for y in 0..N {
+                for x in 0..N {
+                    let c = color::to_u8(hsv_to_rgb(h, x as f32 / (N - 1) as f32, 1.0 - y as f32 / (N - 1) as f32));
+                    px[(y * N + x) as usize] = slint::Rgb8Pixel { r: c[0], g: c[1], b: c[2] };
+                }
+            }
+            slint::Image::from_rgb8(buf)
+        });
         g.on_hsv_hex(|h, s, v| color::to_hex(hsv_to_rgb(h, s, v)).into());
         g.on_hex_hsv(|hx| {
             let (h, s, v) = rgb_to_hsv(color::parse_hex(&hx).unwrap_or([0.5; 3]));
@@ -688,6 +930,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 a.cfg.palette = p;
                 a.cfg.light = l;
                 drop(a);
+                fade_next();
                 changed();
             }
         }
@@ -711,7 +954,7 @@ fn main() -> Result<(), slint::PlatformError> {
             app.borrow_mut().cfg.menus = on;
             let (pal, light) = (app.borrow().cfg.palette.clone(), app.borrow().cfg.light.clone());
             // el vigilante solo hace falta si alguna versión de AE no tiene el plugin AeTint.aex
-            let need_watcher = on && !install::all_have_plugin(&app.borrow().targets);
+            let need_watcher = on && app.borrow().cfg.watcher;
             let r = menus::write_colors(&pal, &light, on && !is_native(&pal, &light)).and_then(|_| if need_watcher { menus::start_watcher() } else { Ok(()) });
             if let Some(ui) = weak.upgrade() {
                 ui.set_menus(on);
@@ -753,6 +996,40 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             if on {
                 sound::play(sound::Sound::Done);
+            }
+        }
+    });
+    ui.on_toggle_watcher({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move |on| {
+            app.borrow_mut().cfg.watcher = on;
+            install::save_config(&app.borrow().cfg);
+            let r = if on && app.borrow().cfg.menus {
+                menus::start_watcher()
+            } else {
+                menus::stop_watcher();
+                let _ = menus::set_autostart(false);
+                Ok(())
+            };
+            if let Some(ui) = weak.upgrade() {
+                ui.set_watcher(on);
+                ui.set_autostart(menus::autostart_enabled());
+                match r {
+                    Err(e) => {
+                        ui.set_status(e.into());
+                        ui.set_status_error(true);
+                        ui.set_status_ok(false);
+                    }
+                    Ok(()) => {
+                        ui.set_status(if on {
+                            t("Watchdog on: it loads the menus into versions of After Effects without the AeTint plugin.", "Vigilante activado: carga los menús en las versiones de After Effects sin el plugin de AeTint.")
+                        } else {
+                            t("Watchdog off.", "Vigilante desactivado.")
+                        }.into());
+                        ui.set_status_error(false);
+                        ui.set_status_ok(on);
+                    }
+                }
             }
         }
     });
@@ -872,21 +1149,48 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.on_win_close(|| {
             let _ = slint::quit_event_loop();
         });
+        // reloj de la luz del logo: 20 fps (se mueve despacio, no se nota) solo con la ventana activa y visible;
+        // con el renderizador por software cada paso redibuja la ventana entera
+        {
+            let weak = ui.as_weak();
+            let t = std::cell::Cell::new(0.0f32);
+            let last = std::cell::Cell::new(std::time::Instant::now());
+            let timer = slint::Timer::default();
+            timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(50), move || {
+                let now = std::time::Instant::now();
+                let dt = now.duration_since(last.replace(now)).as_secs_f32().min(0.1);
+                let Some(ui) = weak.upgrade() else { return };
+                let live = ui
+                    .window()
+                    .with_winit_window(|w: &winit::window::Window| w.has_focus() && !w.is_minimized().unwrap_or(false))
+                    .unwrap_or(true);
+                if live {
+                    t.set(t.get() + dt);
+                    ui.set_lt(t.get());
+                }
+            });
+            std::mem::forget(timer);
+        }
         // esquinas redondeadas de Windows 11 en la ventana sin marco
-        let weak = ui.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-            if let Some(ui) = weak.upgrade() {
-                ui.window().with_winit_window(|w: &winit::window::Window| {
-                    round_corners(w);
-                });
-            }
-        });
+        // se pide varias veces: si se pide antes de que la ventana termine de mostrarse, Windows lo ignora
+        for ms in [50u64, 400, 1200] {
+            let weak = ui.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.window().with_winit_window(|w: &winit::window::Window| {
+                        round_corners(w);
+                    });
+                    window_border(&ui);
+                }
+            });
+        }
     }
     // ── brillo que se edita: Dark (Darkest y Dark de AE) o Light
     ui.on_set_edit_light({
         let (app, weak) = (app.clone(), ui.as_weak());
         move |light| {
             app.borrow_mut().edit_light = light;
+            fade_next();
             if let Some(ui) = weak.upgrade() {
                 let a = app.borrow();
                 ui.set_presets(preset_items(light));
@@ -933,6 +1237,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
                 a.cfg.overrides = t.overrides;
             }
+            fade_next();
             changed();
             if let Some(ui) = weak.upgrade() {
                 ui.set_status(tr!("Loaded “{}”. Press Apply theme to use it in After Effects.", "“{}” cargado. Pulsa Aplicar tema para usarlo en After Effects.", t.name).into());
@@ -1039,6 +1344,16 @@ fn main() -> Result<(), slint::PlatformError> {
 
     refresh(&ui, &app.borrow());
     ui.set_menus(app.borrow().cfg.menus);
+    // sin vigilante no hace falta arrancar con Windows (versiones anteriores lo dejaban puesto)
+    if !app.borrow().cfg.watcher {
+        if menus::autostart_enabled() {
+            let _ = menus::set_autostart(false);
+        }
+        if menus::watcher_running() {
+            menus::stop_watcher();
+        }
+    }
+    ui.set_watcher(app.borrow().cfg.watcher);
     ui.set_autostart(menus::autostart_enabled());
     ui.set_splash_name(splash_label(&app.borrow().cfg).into());
     ui.set_splash_thumb(splash_thumb(&app.borrow().cfg));
@@ -1050,7 +1365,7 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_sounds(app.borrow().cfg.sounds);
     if app.borrow().cfg.menus {
         let _ = menus::write_colors(&app.borrow().cfg.palette, &app.borrow().cfg.light, menus_on(&app.borrow().cfg));
-        if !install::all_have_plugin(&app.borrow().targets) {
+        if app.borrow().cfg.watcher {
             let _ = menus::start_watcher();
         }
     }

@@ -16,7 +16,8 @@ pub const RES_NAME: &str = "AE-SPECTRUM-COLORTHEMES";
 pub const PREFIX: &str = "ae-color-";
 
 pub struct AeLib {
-    res: Resource,
+    /// el JSON "AE-SPECTRUM-COLORTHEMES" (AE 2022 en adelante; 2020/2021 solo tienen los temas XML)
+    res: Option<Resource>,
     pub version: String,
     /// AE 2024 y anteriores (interfaz antigua): temas XML con los colores reales de la interfaz.
     pub xml: Vec<Resource>,
@@ -35,17 +36,21 @@ impl AeLib {
     pub fn open(b: &[u8]) -> Result<AeLib, String> {
         let p = Pe::parse(b)?;
         let res = p.resources(b);
-        let r = res.iter().find(|r| r.is("JSON", RES_NAME)).cloned().ok_or_else(|| tr!("AfterFXLib.dll has no After Effects colour table", "AfterFXLib.dll no tiene la tabla de colores de AE"))?;
-        let xml = if res.iter().any(|x| x.is("XML", crate::drover::MARKER)) {
+        let r = res.iter().find(|r| r.is("JSON", RES_NAME)).cloned();
+        let xml: Vec<Resource> = if res.iter().any(|x| x.is("XML", crate::drover::MARKER)) {
             crate::drover::RESOURCES.iter().filter_map(|n| res.iter().find(|x| x.is("XML", n)).cloned()).collect()
         } else {
             Vec::new()
         };
+        if r.is_none() && xml.is_empty() {
+            return Err(tr!("AfterFXLib.dll has no After Effects colour table", "AfterFXLib.dll no tiene la tabla de colores de AE"));
+        }
         Ok(AeLib { res: r, version: pe::file_version(b, &res), xml })
     }
 
     pub fn json(&self, b: &[u8]) -> Result<Value, String> {
-        let t = &b[self.res.off..self.res.off + self.res.size];
+        let r = self.res.as_ref().ok_or_else(|| tr!("this version has no After Effects colour JSON", "esta versión no tiene el JSON de colores de AE"))?;
+        let t = &b[r.off..r.off + r.size];
         let s = String::from_utf8_lossy(t);
         let s = s.trim_start_matches('\u{feff}').trim_end_matches(['\0', ' ', '\n', '\r', '\t']);
         serde_json::from_str(s).map_err(|e| tr!("unreadable After Effects JSON: {}", "JSON de AE ilegible: {}", e))
@@ -53,6 +58,10 @@ impl AeLib {
 
     /// ¿El bloque darkest todavía tiene los grises de Adobe? (fondo de la timeline gris neutro)
     pub fn looks_original(&self, b: &[u8]) -> bool {
+        // AE 2020/2021 (solo XML): el fondo de la aplicación de DVACOLORTHEMESV5 sigue siendo gris
+        if self.res.is_none() {
+            return self.xml.iter().find(|x| x.is("XML", "DVACOLORTHEMESV5")).is_some_and(|x| crate::drover::looks_original(&b[x.off..x.off + x.size]));
+        }
         self.json(b)
             .ok()
             .and_then(|v| v["darkest"]["ae-color-timelinegebackground"].as_str().and_then(color::parse_css))
@@ -64,8 +73,8 @@ impl AeLib {
     /// en los bloques oscuros: en el claro no tendrían sentido.
     pub fn apply(&self, orig: &[u8], blocks: &[(&str, ToneRef, &Pal)], overrides: &BTreeMap<String, String>) -> Result<Vec<u8>, String> {
         let mut b = orig.to_vec();
-        let r = &self.res;
         let none = BTreeMap::new();
+        if let Some(r) = &self.res {
         let new = jsonfit::rewrite_same_len(&orig[r.off..r.off + r.size], |v| {
             for (block, tone, pal) in blocks {
                 let map = GreyMap::new(tone, pal);
@@ -86,6 +95,7 @@ impl AeLib {
             Ok(())
         })?;
         b[r.off..r.off + r.size].copy_from_slice(&new);
+        }
         // interfaz antigua (2024 y anteriores): los temas XML
         if !self.xml.is_empty() {
             let dark = blocks.iter().find(|x| x.0 != "light").map(|x| x.2);

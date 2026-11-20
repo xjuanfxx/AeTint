@@ -78,6 +78,47 @@ fn recolor_panel(c: &Rgba<u8>, panel: &Rgba<u8>, pal: &Pal) -> [f32; 3] {
     [0, 1, 2].map(|i| bg[i] + (fg[i] - bg[i]) * a)
 }
 
+/// Curva suave (smootherstep): sin pendiente en los extremos, así no se ve dónde empieza ni dónde acaba el fundido.
+fn smoother(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+/// Ruido de ±0.5 niveles por píxel (hash entero), contra las bandas del degradado.
+fn dither(x: u32, y: u32) -> f32 {
+    let mut v = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77);
+    v ^= v >> 15;
+    v = v.wrapping_mul(0x2C1B_3C6D);
+    v ^= v >> 12;
+    (v & 0xFFFF) as f32 / 65535.0 - 0.5
+}
+
+/// Columnas donde empieza y acaba el fundido: desde el hueco que queda a la derecha del logo (con un margen) hasta
+/// bien dentro de la ilustración, para que la imagen se funda con el panel en un tramo largo.
+fn fade_span(orig: &RgbaImage, panel: &Rgba<u8>, x0: u32) -> (u32, u32) {
+    let (w, h) = orig.dimensions();
+    // solo píxeles opacos: las esquinas redondeadas transparentes no cuentan
+    let any = |x: u32| (0..h).step_by(2).any(|y| { let p = orig.get_pixel(x, y); p[3] == 255 && diff(p, panel) > 12 });
+    // la cola del fundido original de Adobe, luego el hueco vacío, y lo que quede a la izquierda es el logo
+    let mut x = x0;
+    while x > 0 && any(x - 1) {
+        x -= 1;
+    }
+    let tail = x;
+    while x > 0 && !any(x - 1) {
+        x -= 1;
+    }
+    let text_right = x;
+    let wf = w as f32;
+    if tail < w / 4 {
+        // no se distingue el hueco (panel con textura): un fundido prudente que no llegue al logo
+        return (x0.saturating_sub((wf * 0.05) as u32), (x0 + (wf * 0.12) as u32).min(w - 1));
+    }
+    let start = (text_right + (wf * 0.03) as u32).max(x0.saturating_sub((wf * 0.14) as u32)).min(tail.min(x0));
+    let end = (x0 + (wf * 0.16) as u32).min(w - 1).max(start + 1);
+    (start, end)
+}
+
 /// La imagen del usuario en la zona de la ilustración, el panel con la paleta y las esquinas como estaban.
 fn compose(orig: &RgbaImage, user: &DynamicImage, pal: Option<&Pal>) -> RgbaImage {
     let (w, h) = orig.dimensions();
@@ -85,10 +126,14 @@ fn compose(orig: &RgbaImage, user: &DynamicImage, pal: Option<&Pal>) -> RgbaImag
     let (x0, y0, x1, y1) = art_box(orig, &panel);
     // ¿la ilustración llega a los bordes (fundido por la izquierda) o es un recuadro con márgenes?
     let edge = x1 + 3 >= w && y0 <= 3 && y1 + 3 >= h;
-    let fade = ((w as f32 * 0.07) as u32).max(1);
-    let (ax, ay) = if edge { (x0.saturating_sub(fade / 3), 0) } else { (x0, y0) };
+    // fundido ancho y suave: empieza en el hueco entre el logo y la ilustración y entra en la imagen
+    let (fs, fe) = fade_span(orig, &panel, x0);
+    let (ax, ay) = if edge { (fs, 0) } else { (x0, y0) };
     let (aw, ah) = if edge { (w - ax, h) } else { (x1 - x0 + 1, y1 - y0 + 1) };
     let art = cover(user, aw, ah);
+    // copia desenfocada: en el fundido la imagen entra borrosa y se va enfocando, así los trazos marcados (contornos,
+    // bordes) no dibujan una línea a media opacidad
+    let soft = if edge { image::imageops::fast_blur(&art, w as f32 * 0.018) } else { art.clone() };
     let radius = w as f32 * 0.027;
     let flat = match pal {
         Some(p) => to8(p.panel),
@@ -111,14 +156,25 @@ fn compose(orig: &RgbaImage, user: &DynamicImage, pal: Option<&Pal>) -> RgbaImag
             let col = if !in_box {
                 left
             } else {
-                let a = art.get_pixel(x - ax, y - ay);
+                let u = ((x as f32 + 0.5 - fs as f32) / (fe - fs).max(1) as f32).clamp(0.0, 1.0);
+                let a = if edge {
+                    let (sh, bl) = (art.get_pixel(x - ax, y - ay), soft.get_pixel(x - ax, y - ay));
+                    let k = smoother((u - 0.3) / 0.7);
+                    [0, 1, 2].map(|i| bl[i] as f32 + (sh[i] as f32 - bl[i] as f32) * k)
+                } else {
+                    let p = art.get_pixel(x - ax, y - ay);
+                    [p[0] as f32, p[1] as f32, p[2] as f32]
+                };
                 let t = if edge {
-                    ((x - ax) as f32 / fade as f32).min(1.0)
+                    // smoothstep: más gradual en el centro que smootherstep
+                    u * u * (3.0 - 2.0 * u)
                 } else {
                     rounded(x as f32 + 0.5, y as f32 + 0.5, x0 as f32, y0 as f32, x1 as f32 + 1.0, y1 as f32 + 1.0, radius)
                 };
                 let under = if edge { flat } else { match pal { Some(p) => recolor_panel(o, &panel, p), None => [o[0] as f32, o[1] as f32, o[2] as f32] } };
-                [0, 1, 2].map(|i| under[i] + (a[i] as f32 - under[i]) * t)
+                // un poco de ruido donde mezcla, para que el degradado no haga escalones
+                let n = if t > 0.0 && t < 1.0 { dither(x, y) } else { 0.0 };
+                [0, 1, 2].map(|i| under[i] + (a[i] - under[i]) * t + n)
             };
             out.put_pixel(x, y, Rgba([col[0].round() as u8, col[1].round() as u8, col[2].round() as u8, o[3]]));
         }

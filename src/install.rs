@@ -164,9 +164,12 @@ pub struct Config {
     /// Colores de AE puestos a mano (claves sin "ae-color-").
     pub overrides: BTreeMap<String, String>,
     pub selected: Vec<String>,
-    /// Menús Win32 y barra de título (aetint_menu.dll).
-    #[serde(default)]
+    /// Menús Win32 y barra de título (aetint_menu.dll). Activado por defecto.
+    #[serde(default = "yes")]
     pub menus: bool,
+    /// Vigilante (proceso aparte) que carga los menús en las versiones de AE sin el plugin. Apagado por defecto.
+    #[serde(default)]
+    pub watcher: bool,
     /// Idioma de la interfaz: "en" (por defecto) o "es".
     #[serde(default = "default_lang")]
     pub lang: String,
@@ -188,7 +191,7 @@ fn yes() -> bool {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: false, lang: default_lang(), sounds: true, splash: None }
+        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: true, watcher: false, lang: default_lang(), sounds: true, splash: None }
     }
 }
 
@@ -379,16 +382,6 @@ pub const AEX_NAME: &str = "AeTint.aex";
 
 pub fn aex_path(t: &Target) -> PathBuf {
     t.support.join("Plug-ins").join(AEX_NAME)
-}
-
-/// ¿Esta versión de AE tiene el plugin de arranque, y es el de esta versión de AeTint?
-pub fn plugin_ok(t: &Target) -> bool {
-    matches!((fs::read(aex_path(t)), loader_bytes()), (Ok(a), Some(l)) if a == l)
-}
-
-/// Todas las versiones instaladas cargan los menús solas (sin vigilante).
-pub fn all_have_plugin(targets: &[Target]) -> bool {
-    targets.iter().all(plugin_ok)
 }
 
 fn loader_bytes() -> Option<Vec<u8>> {

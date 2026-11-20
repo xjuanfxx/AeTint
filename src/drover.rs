@@ -189,6 +189,26 @@ fn get<'a>(a: &'a [(String, String)], k: &str) -> Option<&'a str> {
     a.iter().find(|(x, _)| x == k).map(|(_, v)| v.as_str())
 }
 
+/// ¿El tema XML sigue con los colores de Adobe? Mira el fondo de la aplicación (`kColor_ApplicationBackground`):
+/// en el original es gris en todos los temas; con un tema de color deja de serlo.
+pub fn looks_original(orig: &[u8]) -> bool {
+    let Ok(s) = std::str::from_utf8(orig) else { return false };
+    let ents = entities(s);
+    let mut seen = false;
+    for k in keyframes(s) {
+        if get(&k.attrs, "name") != Some("&kColor_ApplicationBackground;") {
+            continue;
+        }
+        // sin "s" es un gris (el original solo da el brillo, v)
+        let sat = get(&k.attrs, "s").and_then(|v| resolve(&ents, v)).unwrap_or(0.0);
+        if sat > 0.02 {
+            return false;
+        }
+        seen = true;
+    }
+    seen
+}
+
 /// Grises de referencia de un brillo, a partir de los colores de ese archivo.
 fn tone_of(kfs: &[&Kf], ents: &HashMap<String, String>, dark: bool) -> Option<ToneRef> {
     let grey = |names: &[&str]| -> Option<f32> {

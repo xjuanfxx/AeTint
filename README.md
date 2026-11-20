@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-7A80C2?style=for-the-badge&labelColor=1E1E2E" alt="Windows 10 | 11">
-  <img src="https://img.shields.io/badge/After%20Effects-2026%20%7C%202027-7A80C2?style=for-the-badge&labelColor=1E1E2E" alt="After Effects 2026 | 2027">
+  <img src="https://img.shields.io/badge/After%20Effects-2020%E2%80%932027-7A80C2?style=for-the-badge&labelColor=1E1E2E" alt="After Effects 2020–2027">
   <img src="https://img.shields.io/badge/Rust-Slint-7A80C2?style=for-the-badge&labelColor=1E1E2E" alt="Rust + Slint">
   <img src="https://img.shields.io/badge/License-GPL--3.0-7A80C2?style=for-the-badge&labelColor=1E1E2E" alt="GPL-3.0">
 </p>
@@ -34,15 +34,17 @@
 
 - **One palette, everywhere.** Six colours — background, panels, frames, fields, text and accent — drive hundreds of Adobe greys. Each grey lands between your colours by lightness, so every in-between shade follows the palette.
 - **Dark and light.** Every theme has a **Dark** palette (AE's *Darkest* and *Dark*) and a **Light** palette (AE's *Light*). Switch brightness in AE and the menus and title bar follow live.
-- **Presets** with both versions: Catppuccin Mocha / Latte, Tokyo Night / Day, Rosé Pine / Dawn, Nord / Snow Storm, Gruvbox dark / light, Graphite, and AE's own colours.
+- **Presets** with both versions: Catppuccin Mocha / Latte, Tokyo Night / Day, Rosé Pine / Dawn, Nord / Snow Storm, Gruvbox, Dracula, One Dark / One Light, Monokai, Solarized, GitHub, Everforest, Kanagawa, Ayu, Graphite, and AE's own colours. Scroll the strip with the mouse wheel or the ‹ › arrows.
+- **Colour picker with HSL**: a saturation/brightness square plus hue, saturation and lightness sliders, each with a box to type the exact value, and the hex code.
 - **My themes** — save your palettes (including hand-picked timeline colours) and switch with one click. **Export** one as a `.aetint` file to share it; whoever gets it double-clicks the file (or uses **Import…**) and it opens in AeTint.
 - **Your own splash screen** *(experimental)* — press **Splash** (next to the theme tabs), pick a PNG or JPG and **Apply theme** puts it on After Effects' start-up screen. Adobe's layout stays: your image takes the artwork side and the panel and logo follow your palette. It's written into the three splash sizes in place, so **Restore** undoes it like everything else.
 - **Timeline overrides** for the navigator, work area, playhead, selected layer and keyframe.
-- **Live preview** of After Effects inside the app.
+- **Live preview** of After Effects inside the app, with smooth transitions when you switch between Dark and Light, presets or themes. The **Tint menu & title** switch sits on the preview's menu bar (on by default).
 - **Menus that actually match**: menu bar, dropdowns, multi-column menus like *Effect*, borders, separators, hover and the title bar.
 - **Safe by design**: originals are backed up and **Restore** puts them back. Nothing is written if a file doesn't look the way AeTint expects.
 - **Clear feedback**: the status line says what happened; if something fails, click the message to open the full log (`aetint.log`) or press **Retry**. A short sound plays when it's done or fails (you can turn it off).
-- **English and Spanish** UI, custom title bar, no scrolling.
+- **Light on your PC**: about 35 MB of RAM, no GPU use, ~0 % CPU in the background, and sharp text at 100 %, 125 %, 150 %… display scaling.
+- **English and Spanish** UI, custom title bar with rounded corners.
 
 <p align="center">
   <img src="docs/app-themes.png" alt="My themes library" width="62%">
@@ -65,7 +67,7 @@ Prefer a portable copy? `AeTint-windows-x64.zip` has the same three files.
 ### Requirements
 
 - Windows 10 or 11
-- After Effects 2023–2027 (2026 and 2027 tested; 2023–2025 checked against their files)
+- After Effects 2020–2027 (2024, 2026 and 2027 tested; 2020–2023 and 2025 checked against their files)
 - [Rust](https://rustup.rs) to build it yourself
 
 ### Build
@@ -127,7 +129,7 @@ The Home screen is Adobe's `com.adobe.ccx.start` UXP plugin. Its stylesheets com
 - hooks uxtheme for backgrounds, borders and separators, and sets the title bar colours through DWM;
 - reads AE's *User Interface Brightness* preference to pick the dark or light colours, and reloads `%LOCALAPPDATA%\AeTint\menu.json` live.
 
-If an installed AE version doesn't have the plugin, AeTint starts a fallback watcher that sleeps until Windows reports a new window and only acts on After Effects. While it runs it shows the AeTint icon in the system tray (double-click opens AeTint; right-click lets you stop it).
+If an installed AE version doesn't have the plugin, you can turn on the optional fallback watchdog in AeTint's settings (off by default). It runs as `AeTintWatchdog.exe`, sleeps until Windows reports a new window and only acts on After Effects. While it runs it shows the AeTint icon in the system tray (double-click opens AeTint; right-click lets you stop it).
 </details>
 
 <details>
@@ -151,7 +153,10 @@ Everything is located by name, not by fixed offsets, so different builds work as
 | After Effects 2025 | 🟡 files checked (25.6) | 🟡 very likely | ✅ |
 | After Effects 2024 | ✅ tested (24.6) | ✅ tested | ✅ tested |
 | After Effects 2023 | 🟡 files checked (23.6) | ➖ | ✅ |
-| 2022 and earlier | ❔ | ➖ | ✅ |
+| After Effects 2022 | 🟡 files checked (22.6) | ➖ | ✅ |
+| After Effects 2021 | 🟡 files checked (18.4) | ➖ | ✅ |
+| After Effects 2020 | 🟡 files checked (17.7) | ➖ | ✅ |
+| 2019 and earlier | ❔ | ➖ | ✅ |
 
 *Files checked* means AeTint reads and themes that version's `dvaui.dll` and `AfterFXLib.dll` correctly, but it hasn't been tried inside a running copy yet.
 
@@ -181,15 +186,15 @@ Create `%LOCALAPPDATA%\AeTint\debug.flag` to make the DLL log to `%LOCALAPPDATA%
 ## FAQ
 
 <details>
-<summary><b>Why is there an AeTint icon in the system tray / an <code>AeTint.exe</code> in Task Manager?</b></summary>
+<summary><b>Why is there an AeTint icon in the system tray / an <code>AeTintWatchdog.exe</code> in Task Manager?</b></summary>
 
-That's the **menu watcher** (`AeTint.exe --watch`). It only exists as a fallback:
+That's the **menu watchdog**. It's optional and **off by default**:
 
 - Normally the menus and title bar are painted by the **`AeTint.aex` plugin**, which After Effects loads by itself at startup. Nothing runs in the background in that case.
-- If an installed After Effects version **doesn't have the plugin** (a version you haven't applied a theme to yet, or a newly installed one), AeTint starts the watcher so that version's menus still get painted.
-- The tray icon is there so it's clear what that process is. Double-click it to open AeTint; right-click → **Stop** to close it (it comes back the next time AeTint opens if it's still needed).
+- If you turn on **Watchdog for AE without the plugin** in AeTint's settings (the gear), versions that don't have the plugin yet (one you haven't applied a theme to, or a newly installed one) still get their menus painted. You can also make it start with Windows.
+- The tray icon is there so it's clear what that process is. Double-click it to open AeTint; right-click → **Stop** to close it.
 
-To make it go away for good, select every After Effects version in AeTint and press **Apply theme** once: with the plugin installed everywhere, the watcher isn't started any more.
+To make it go away for good, turn the option off, or select every After Effects version and press **Apply theme** once so they all have the plugin.
 </details>
 
 <details>
@@ -258,7 +263,7 @@ Planned, roughly in this order:
 - [x] **Custom splash screen** — pick an image; AeTint writes the three splash sizes (`AE_SPLASH`, `_AT_3TO2X`, `_AT_2X`) into `AfterFXLib.dll` on *Apply theme*, restorable like everything else.
 - [ ] **A different theme per version** — e.g. one for 2026 and another for 2027.
 - [ ] **Premiere Pro and Media Encoder** — they share `dvaui.dll` and Win32 menus with After Effects.
-- [ ] **More versions** — try 2023 and 2025 inside After Effects (their files are already supported) and check 2022 and earlier.
+- [ ] **More versions** — try 2020–2023 and 2025 inside After Effects (their files are already supported) and check 2019 and earlier.
 
 Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/issues).
 
@@ -266,7 +271,7 @@ Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/is
 
 - Built with [Slint](https://slint.dev) and Rust.
 - Fonts: [Inter](https://rsms.me/inter/), [Archivo](https://github.com/Omnibus-Type/Archivo) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/) — SIL Open Font License (`ui/fonts`).
-- Palettes from [Catppuccin](https://catppuccin.com), [Tokyo Night](https://github.com/enkia/tokyo-night-vscode-theme), [Rosé Pine](https://rosepinetheme.com), [Nord](https://www.nordtheme.com) and [Gruvbox](https://github.com/morhetz/gruvbox).
+- Palettes from [Catppuccin](https://catppuccin.com), [Tokyo Night](https://github.com/enkia/tokyo-night-vscode-theme), [Rosé Pine](https://rosepinetheme.com), [Nord](https://www.nordtheme.com), [Gruvbox](https://github.com/morhetz/gruvbox), [Dracula](https://draculatheme.com), [One Dark](https://github.com/atom/atom/tree/master/packages/one-dark-ui), [Monokai](https://monokai.pro), [Solarized](https://ethanschoonover.com/solarized/), [GitHub Primer](https://primer.style), [Everforest](https://github.com/sainnhe/everforest), [Kanagawa](https://github.com/rebelot/kanagawa.nvim) and [Ayu](https://github.com/ayu-theme/ayu-colors).
 - The `dvaui.dll` colour-table approach was inspired by Nothi Theme; AeTint is an independent implementation.
 
 AeTint is not affiliated with or endorsed by Adobe. After Effects is a trademark of Adobe Inc.

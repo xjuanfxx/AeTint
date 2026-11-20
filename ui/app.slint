@@ -682,9 +682,6 @@ component ThemeTile inherits Rectangle {
     border-color: ta.has-hover ? pr.text.with-alpha(0.45) : pr.panel.mix(pr.text, 0.85);
     animate border-color { duration: 100ms; }
     clip: true;
-    // mini pop: se hunde al pulsar y rebota al soltar; sube un poco al pasar el ratón
-    transform-scale: ta.pressed ? 0.94 : 1;
-    animate transform-scale { duration: 340ms; easing: ease-out-back; }
     // panel con una línea de texto y una barra de acento
     Rectangle {
         x: 7px;
@@ -1655,15 +1652,19 @@ export component AppWindow inherits Window {
                 }
 
                 if root.lib-tab == 0: Rectangle {
+                    // solo fundido: el renderizador por software no escala y, con transform-scale, la fila de
+                    // "My themes" se dibujaba corrida (el primer tema quedaba fuera)
                     opacity: root.lib-in ? 1 : 0;
-                    transform-scale: root.lib-in ? 1 : 0.97;
                     animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
-                    animate transform-scale { duration: root.lib-in ? 320ms : 0ms; easing: ease-out-back; }
                     height: 72px;
                     pf := Flickable {
                         height: 72px;
                         content-width: root.presets.length * 136px - 8px;
+                        // x/y explícitas: sin ellas Slint centra el área en el contenido y, con pocas fichas (más
+                        // estrechas que la fila), toda la fila se corría a la izquierda y la primera quedaba fuera
                         TouchArea {
+                            x: 0;
+                            y: 0;
                             width: max(pf.width, pf.content-width);
                             height: 72px;
                             scroll-event(e) => {
@@ -1685,10 +1686,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.lib-tab == 1 && root.themes.length == 0: Rectangle {
+                    // solo fundido: el renderizador por software no escala y, con transform-scale, la fila de
+                    // "My themes" se dibujaba corrida (el primer tema quedaba fuera)
                     opacity: root.lib-in ? 1 : 0;
-                    transform-scale: root.lib-in ? 1 : 0.97;
                     animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
-                    animate transform-scale { duration: root.lib-in ? 320ms : 0ms; easing: ease-out-back; }
                     height: 72px;
                     // mismo alto que una fila de temas (al cambiar de pestaña no se mueve nada)
                     Rectangle {
@@ -1705,15 +1706,19 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.lib-tab == 1 && root.themes.length > 0: Rectangle {
+                    // solo fundido: el renderizador por software no escala y, con transform-scale, la fila de
+                    // "My themes" se dibujaba corrida (el primer tema quedaba fuera)
                     opacity: root.lib-in ? 1 : 0;
-                    transform-scale: root.lib-in ? 1 : 0.97;
                     animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
-                    animate transform-scale { duration: root.lib-in ? 320ms : 0ms; easing: ease-out-back; }
                     height: 72px;
                     tf := Flickable {
                         height: 72px;
                         content-width: root.themes.length * 136px - 8px;
+                        // x/y explícitas: sin ellas Slint centra el área en el contenido y, con pocas fichas (más
+                        // estrechas que la fila), toda la fila se corría a la izquierda y la primera quedaba fuera
                         TouchArea {
+                            x: 0;
+                            y: 0;
                             width: max(tf.width, tf.content-width);
                             height: 72px;
                             scroll-event(e) => {
@@ -1822,7 +1827,10 @@ export component AppWindow inherits Window {
                         // con muchas versiones instaladas la lista se desplaza (máximo 4 filas a la vista), así los
                         // botones de abajo siempre caben
                         tgt-list := Flickable {
-                            height: min(root.targets.length, 4) * 30px;
+                            // altura fija: si no, el layout la encoge y el hueco se lo lleva el espacio libre de arriba
+                            min-height: min(root.targets.length, 4) * 30px;
+                            max-height: min(root.targets.length, 4) * 30px;
+                            vertical-stretch: 0;
                             content-height: root.targets.length * 30px;
                         VerticalLayout {
                             width: parent.width;

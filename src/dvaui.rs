@@ -61,9 +61,13 @@ pub struct Legacy {
     pub linked: Option<Resource>,
     pub variables: Option<Resource>,
     pub tones: Vec<(Kind, ToneRef)>,
+    /// grises de referencia de los bloques intermedios de DNA-VARS (solo AE 2020/2021)
+    pub extra: Vec<(&'static str, Kind, ToneRef)>,
 }
 
 const BLOCKS: [(&str, Kind); 3] = [("darkest", Kind::Darkest), ("dark", Kind::Dark), ("light", Kind::Light)];
+/// AE 2020/2021 (DNA-VARS): el deslizador de brillo usa también estos bloques intermedios.
+const DNA_EXTRA: [(&str, Kind); 3] = [("middark", Kind::Dark), ("midlight", Kind::Light), ("lightest", Kind::Light)];
 
 fn res_json(b: &[u8], r: &Resource) -> Option<Value> {
     let s = String::from_utf8_lossy(&b[r.off..r.off + r.size]);
@@ -247,7 +251,7 @@ impl Dvaui {
             version: pe::file_version(b, res),
             dna: get("DROVER-DNA-VARS"),
             css,
-            legacy: Some(Legacy { drover: Some(drover), reduced: get("DNA-VARS-REDUCED"), linked: None, variables: get("VARIABLES"), tones }),
+            legacy: Some(Legacy { drover: Some(drover), reduced: get("DNA-VARS-REDUCED"), linked: None, variables: get("VARIABLES"), tones, extra: Vec::new() }),
         })
     }
 
@@ -267,6 +271,14 @@ impl Dvaui {
         if !tones.iter().any(|(k, _)| *k != Kind::Light) {
             return Err(tr!("no dark tables with the original greys (is a theme already applied?)", "no hay tablas oscuras con los grises originales (¿el archivo ya tiene un tema aplicado?)"));
         }
+        let mut extra = Vec::new();
+        for (name, kind) in DNA_EXTRA {
+            if let Some(Value::Object(m)) = j.get(name) {
+                if let Some(t) = dna_tone(m, kind) {
+                    extra.push((name, kind, t));
+                }
+            }
+        }
         let css = res
             .iter()
             .filter(|r| matches!(r.path.first(), Some(ResKey::Name(t)) if t == "CSS") && matches!(r.path.get(1), Some(ResKey::Name(n)) if n == "SPECTRUM_DARK"))
@@ -280,7 +292,7 @@ impl Dvaui {
             version: pe::file_version(b, res),
             dna,
             css,
-            legacy: Some(Legacy { drover: None, reduced: Some(vars), linked: get("DNA-VARS-LINKED"), variables: None, tones }),
+            legacy: Some(Legacy { drover: None, reduced: Some(vars), linked: get("DNA-VARS-LINKED"), variables: None, tones, extra }),
         })
     }
 
@@ -424,18 +436,27 @@ impl Dvaui {
 impl Dvaui {
     /// AE 2023/2024: aplica la paleta a "DROVER", "DNA-VARS-REDUCED" y "VARIABLES" (mismas reglas que las tablas).
     fn apply_legacy(&self, l: &Legacy, orig: &[u8], b: &mut [u8], pal: &Pal, light: Option<&Pal>) -> Result<(), String> {
-        let maps: Vec<(&str, GreyMap, ToneRef, &Pal)> = BLOCKS
+        let pick = |kind: Kind| -> Option<&Pal> {
+            match (kind, light) {
+                (Kind::Light, Some(lp)) => Some(lp),
+                (Kind::Light, None) => None,
+                _ => Some(pal),
+            }
+        };
+        let mut maps: Vec<(&str, GreyMap, ToneRef, &Pal)> = BLOCKS
             .iter()
             .filter_map(|(name, kind)| {
-                let p = match (kind, light) {
-                    (Kind::Light, Some(lp)) => lp,
-                    (Kind::Light, None) => return None,
-                    _ => pal,
-                };
+                let p = pick(*kind)?;
                 let t = l.tones.iter().find(|t| t.0 == *kind)?.1;
                 Some((*name, GreyMap::new(&t, p), t, p))
             })
             .collect();
+        // AE 2020/2021: los brillos intermedios, cada uno con sus propios grises de referencia
+        for (name, kind, t) in &l.extra {
+            if let Some(p) = pick(*kind) {
+                maps.push((*name, GreyMap::new(t, p), *t, p));
+            }
+        }
         // AE 2020/2021 (sin DROVER): los acentos se reconocen por su tono, no por el nombre
         let dna_only = l.drover.is_none();
         let recolor = |name: &str, s: &mut String, block: &str| {

@@ -758,9 +758,8 @@ fn main() -> Result<(), slint::PlatformError> {
         // relativa al centro) que puede llegar a verse; se vuelve a generar al cambiar el color o la escala.
         // `kind` elige los cortes del degradado (0 halo, 1 reflejo, 2 núcleo, 3 velo sobre el contenido).
         {
-            let weak = ui.as_weak();
-            g.on_glow_image(move |color, peak, radius, kind, x0, y0, w, h| {
-                let scale = weak.upgrade().map(|u| u.window().scale_factor()).unwrap_or(1.0);
+            g.on_glow_image(move |peak, radius, kind, x0, y0, w, h, scale| {
+                let scale = if scale > 0.0 { scale } else { 1.0 };
                 let (pw, ph) = ((w * scale).round().max(1.0) as u32, (h * scale).round().max(1.0) as u32);
                 let stops: &[(f32, f32)] = match kind {
                     0 => &[(0.0, 1.0), (0.34, 0.346), (0.7, 0.0)],
@@ -790,7 +789,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     let b = h(a.to_bits() ^ 0x9e37_79b9) as f32 / u32::MAX as f32;
                     a + b - 1.0
                 };
-                let (r, gc, b) = (color.red(), color.green(), color.blue());
+                let (r, gc, b) = (255u8, 255u8, 255u8);
                 let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(pw, ph);
                 for (i, px) in buf.make_mut_slice().iter_mut().enumerate() {
                     let (ix, iy) = (i as u32 % pw, i as u32 / pw);
@@ -806,9 +805,8 @@ fn main() -> Result<(), slint::PlatformError> {
         // fondo del logo: cuadrado redondeado con el degradado del acento, a la resolución real de la pantalla
         // (el renderizador por software no redondea un relleno con degradado)
         {
-            let weak = ui.as_weak();
-            g.on_logo_image(move |accent, size| {
-                let scale = weak.upgrade().map(|u| u.window().scale_factor()).unwrap_or(1.0);
+            g.on_logo_image(move |accent, size, scale| {
+                let scale = if scale > 0.0 { scale } else { 1.0 };
                 let n = (size * scale).round().max(2.0) as u32;
                 let (c0, c1, c2) = (accent.brighter(0.35), accent, accent.darker(0.45));
                 let lerp = |a: slint::Color, b: slint::Color, t: f32| {
@@ -956,6 +954,10 @@ fn main() -> Result<(), slint::PlatformError> {
             // el vigilante solo hace falta si alguna versión de AE no tiene el plugin AeTint.aex
             let need_watcher = on && app.borrow().cfg.watcher;
             let r = menus::write_colors(&pal, &light, on && !is_native(&pal, &light)).and_then(|_| if need_watcher { menus::start_watcher() } else { Ok(()) });
+            // menús desactivados: el vigilante ya no tiene nada que hacer
+            if !on {
+                menus::stop_watcher();
+            }
             if let Some(ui) = weak.upgrade() {
                 ui.set_menus(on);
                 match (r, menus::dll_path()) {
@@ -1149,6 +1151,35 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.on_win_close(|| {
             let _ = slint::quit_event_loop();
         });
+        // escala de la pantalla: al arrancar y cada vez que la ventana pasa a otra pantalla (otra escala), para
+        // que el logo y la luz se vuelvan a generar a la resolución real
+        ui.global::<Ui>().set_scale(ui.window().scale_factor());
+        {
+            let weak = ui.as_weak();
+            ui.window().on_winit_window_event(move |w, ev| {
+                if let winit::event::WindowEvent::Resized(size) = ev {
+                    let tall = size.height as f32 / w.scale_factor() >= 799.5;
+                    let weak = weak.clone();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
+                        if let Some(ui) = weak.upgrade() {
+                            if ui.get_tall() != tall {
+                                ui.set_tall(tall);
+                            }
+                        }
+                    });
+                }
+                if let winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } = ev {
+                    let s = *scale_factor as f32;
+                    let weak = weak.clone();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
+                        if let Some(ui) = weak.upgrade() {
+                            ui.global::<Ui>().set_scale(s);
+                        }
+                    });
+                }
+                slint::winit_030::EventResult::Propagate
+            });
+        }
         // reloj de la luz del logo: 20 fps (se mueve despacio, no se nota) solo con la ventana activa y visible;
         // con el renderizador por software cada paso redibuja la ventana entera
         {

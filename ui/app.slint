@@ -72,8 +72,12 @@ export global Ui {
     pure callback sv-image(float) -> image;
     // mancha de luz blanca (se colorea) y fondo del logo con su degradado, dibujados en Rust
     // luz: color, alfa máximo, radio, tipo de degradado y zona (x0, y0, ancho, alto) relativa al centro
-    pure callback glow-image(color, float, float, int, float, float, float, float) -> image;
-    pure callback logo-image(color, float) -> image;
+    // luz: máscara blanca (alfa máximo, radio, tipo de degradado, zona x0/y0/ancho/alto relativa al centro, escala);
+    // el color se pone con colorize, así no se regenera en cada paso de una transición de colores
+    pure callback glow-image(float, float, int, float, float, float, float, float) -> image;
+    pure callback logo-image(color, float, float) -> image;
+    // escala de la pantalla (la pone Rust): las imágenes de arriba la reciben para regenerarse al cambiar de pantalla
+    in property <float> scale: 1;
     // engranaje de los ajustes girado ese ángulo (grados), como comandos de Path de 16×16
     pure callback gear-path(float) -> string;
     // pista de un deslizador (0 tono, 1 saturación, 2 luminosidad) para un color HSL
@@ -208,7 +212,7 @@ component Logo inherits Rectangle {
     Image {
         width: root.size;
         height: root.size;
-        source: Ui.logo-image(Ui.p.accent, root.size / 1px);
+        source: Ui.logo-image(Ui.p.accent, root.size / 1px, Ui.scale);
         image-fit: fill;
     }
     Path {
@@ -846,6 +850,13 @@ component RowArrows inherits Rectangle {
     in-out property <length> pos;
     in property <length> content;
     property <length> min-pos: min(0px, root.width - root.content);
+    // si el contenido se acorta (se borra un tema) estando al final de la fila, no dejar un hueco
+    changed min-pos => {
+        if (root.pos < root.min-pos) {
+            root.moving = false;
+            root.pos = root.min-pos;
+        }
+    }
     // animación del desplazamiento: de `from` a `to` en 24 pasos de 15 ms (≈360 ms) con ease-out
     property <length> from;
     property <length> to;
@@ -1245,6 +1256,9 @@ export component AppWindow inherits Window {
     callback win-minimize();
     callback win-maximize();
     callback win-close();
+    // ventana de al menos 800 px lógicos de alto (la pone Rust al cambiar de tamaño; leer root.height en el layout
+    // haría un bucle de dependencias)
+    in property <bool> tall: true;
 
     // fuga de luz que sale del logo (centro en 31,26), animada despacio: el halo deriva y respira, el núcleo late
     // y un reflejo más claro recorre la cabecera. Todo con el acento del tema.
@@ -1259,7 +1273,8 @@ export component AppWindow inherits Window {
         y: 26px + 24px * Math.cos(root.lt * 14deg) - 60px;
         width: 448px;
         height: 438px;
-        source: Ui.glow-image(Ui.p.accent, 0.165, 540, 0, -70, -60, 448, 438);
+        source: Ui.glow-image(0.165, 540, 0, -70, -60, 448, 438, Ui.scale);
+        colorize: Ui.p.accent;
         image-fit: fill;
         opacity: (0.13 + 0.035 * Math.sin(root.lt * 31deg)) / 0.165;
     }
@@ -1269,7 +1284,8 @@ export component AppWindow inherits Window {
         y: 8px + 26px * Math.cos(root.lt * 17deg) - 196px;
         width: 392px;
         height: 392px;
-        source: Ui.glow-image(Ui.p.accent.mix(#ffffff, 0.75), 0.075, 280, 1, -196, -196, 392, 392);
+        source: Ui.glow-image(0.075, 280, 1, -196, -196, 392, 392, Ui.scale);
+        colorize: Ui.p.accent.mix(#ffffff, 0.75);
         image-fit: fill;
         opacity: (0.05 + 0.025 * Math.sin(root.lt * 23deg + 90deg)) / 0.075;
     }
@@ -1279,7 +1295,8 @@ export component AppWindow inherits Window {
         y: 26px - 112px;
         width: 224px;
         height: 224px;
-        source: Ui.glow-image(Ui.p.accent.mix(#ffffff, 0.8), 0.26, 160, 2, -112, -112, 224, 224);
+        source: Ui.glow-image(0.26, 160, 2, -112, -112, 224, 224, Ui.scale);
+        colorize: Ui.p.accent.mix(#ffffff, 0.8);
         image-fit: fill;
         opacity: (0.20 + 0.06 * Math.sin(root.lt * 57deg)) / 0.26;
     }
@@ -1828,8 +1845,9 @@ export component AppWindow inherits Window {
                         // botones de abajo siempre caben
                         tgt-list := Flickable {
                             // altura fija: si no, el layout la encoge y el hueco se lo lleva el espacio libre de arriba
-                            min-height: min(root.targets.length, 4) * 30px;
-                            max-height: min(root.targets.length, 4) * 30px;
+                            // 4 filas a la vista; 3 si la ventana es más baja que su tamaño normal (en el mínimo, 4 no caben)
+                            min-height: min(root.targets.length, root.tall ? 4 : 3) * 30px;
+                            max-height: min(root.targets.length, root.tall ? 4 : 3) * 30px;
                             vertical-stretch: 0;
                             content-height: root.targets.length * 30px;
                         VerticalLayout {
@@ -1902,7 +1920,8 @@ export component AppWindow inherits Window {
         y: 26px + 24px * Math.cos(root.lt * 14deg) - 60px;
         width: 322px;
         height: 312px;
-        source: Ui.glow-image(Ui.p.accent, 0.07, 420, 3, -70, -60, 322, 312);
+        source: Ui.glow-image(0.07, 420, 3, -70, -60, 322, 312, Ui.scale);
+        colorize: Ui.p.accent;
         image-fit: fill;
     }
 

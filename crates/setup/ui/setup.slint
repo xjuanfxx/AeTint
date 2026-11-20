@@ -288,6 +288,13 @@ export component SetupWindow inherits Window {
                     }
                 }
             }
+            // borrar los datos sin restaurar deja After Effects con el tema y sin las copias para deshacerlo
+            if root.uninstall && root.opt-wipe && !root.opt-restore: Text {
+                text: L.t("After Effects will keep its theme, and the backups needed to restore Adobe's colours later will be deleted.", "After Effects se quedará con el tema y se borrarán las copias necesarias para volver a los colores de Adobe más adelante.");
+                color: P.bad;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
             if !root.payload-ok: Text {
                 text: L.t("This installer was built without AeTint's files.", "Este instalador se compiló sin los archivos de AeTint.");
                 color: P.bad;

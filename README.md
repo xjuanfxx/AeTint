@@ -26,7 +26,7 @@
 | Area of After Effects | Where the colour lives | How AeTint changes it | Lasts |
 |---|---|---|---|
 | Panels, buttons, fields, lists | `dvaui.dll` — colour tables per brightness | Rewrites the numbers in place (same file size) | Until you restore |
-| Timeline: time navigator, ruler, work area, playhead, layer bars, graph editor | `AfterFXLib.dll` — the `AE-SPECTRUM-COLORTHEMES` table (~120 colours) | Rewrites that table (same file size) | Until you restore |
+| Timeline: time navigator, ruler, work area, playhead, layer bars, graph editor | `AfterFXLib.dll` — the `AE-SPECTRUM-COLORTHEMES` table (~120 colours) and, up to 2024, the XML colour themes | Rewrites them in place (same file size) | Until you restore |
 | Home screen | UXP plugin `com.adobe.ccx.start` — Spectrum stylesheets | Recolours only the rules for each brightness | Until you restore |
 | File / Edit… menus, dropdowns, title bar | Windows (Win32 menus + DWM) | `aetint_menu.dll`, loaded by the `AeTint.aex` plugin | While AE is open |
 
@@ -47,9 +47,12 @@
 - **English and Spanish** UI, custom title bar with rounded corners.
 
 <p align="center">
-  <img src="docs/app-themes.png" alt="My themes library" width="62%">
-  &nbsp;
-  <img src="docs/menus.png" alt="Themed Effect menu" width="28%">
+  <img src="docs/app-picker.png" alt="HSL colour picker" width="49%">
+  <img src="docs/app-themes.png" alt="My themes library" width="49%">
+</p>
+
+<p align="center">
+  <img src="docs/menus.png" alt="Themed Effect menu" width="30%">
 </p>
 
 ## Getting started
@@ -92,7 +95,7 @@ Everything ends up in `target\release`. Keep these three files together:
 1. **Close After Effects.**
 2. Open `AeTint.exe`, pick a preset from the strip under the preview (or set your own colours in the panel on the right) and check both **Dark** and **Light**.
 3. Under **Install to**, tick the versions to theme and press **Apply theme**. The first time, Windows asks for administrator permission to write to `Program Files`.
-4. In **Settings** (the gear at the top right), keep **Paint File, Edit… and the title bar** on to theme the menus.
+4. Keep the **Tint menu & title** switch (on the preview's menu bar) on to theme the File / Edit… menus and the title bar.
 5. Open After Effects.
 
 To undo everything, press **Restore**.
@@ -105,12 +108,16 @@ To undo everything, press **Restore**.
 <summary><b>Panels — <code>dvaui.dll</code></b></summary>
 
 AeTint finds the table of Spectrum colour token names (`gray-50` … `gray-900`, `background-layer-2-color`, …) and the float RGBA tables for each brightness. Every opaque grey is mapped through a lightness curve anchored on your palette; accent blues are rotated to your accent in OKLCh. The dark tables use the dark palette and the light tables use the light one, where the curve is inverted (light panels, dark text). The file keeps its exact size and its PE checksum is recomputed.
+
+Older versions keep these colours as text instead: 2022–2024 in the `DROVER`, `DNA-VARS-REDUCED` and `VARIABLES` JSON resources, and 2020–2021 in `DNA-VARS` / `DNA-VARS-LINKED`, where accent colours aren't named, so blues with Adobe's accent hue follow your accent. AeTint rewrites those values with the same rules.
 </details>
 
 <details>
 <summary><b>Timeline — <code>AfterFXLib.dll</code></b></summary>
 
 The `AE-SPECTRUM-COLORTHEMES` JSON resource holds the timeline's `ae-color-*` values in `light`, `dark` and `darkest` blocks. AeTint rewrites them through the same mapping, compacts the JSON and pads it with spaces so the resource keeps its length.
+
+Up to 2024, most of the interface also reads the XML colour themes in the same file (`AECOLORTHEMES`, `DVACOLORTHEMESV1`–`V6`…), which AeTint recolours too; 2020 and 2021 only have those XML themes.
 </details>
 
 <details>
@@ -252,27 +259,42 @@ Press **Restore** in AeTint, or uninstall it from **Settings → Apps** with *Re
 - On Windows 11, the light menu outline can take a moment to pick up the theme colour.
 - Light/dark switching for menus follows AE's saved preference, so it may lag a few seconds behind the change.
 - Hand-picked timeline colours apply to the dark brightnesses only.
+- After Effects 2020: some context-menu submenus (like *Import ▸* in the Project panel) keep a dark greenish background instead of the theme.
 
 ## Roadmap
 
-Planned, roughly in this order:
+**Next up**
 
-- [ ] **Re-apply after After Effects updates** — detect when an update replaced the themed files and offer a one-click *Reapply* (and a heads-up from inside AE).
+- [ ] **Re-apply after After Effects updates** — notice when an update replaced the themed files and offer a one-click *Reapply* (with a heads-up inside AE).
 - [ ] **Label colours** — match AE's 16 label colours to the theme, or pick them by hand.
-- [x] **Export / import themes** — share a theme as a `.aetint` file and open it with a double-click.
-- [x] **Custom splash screen** — pick an image; AeTint writes the three splash sizes (`AE_SPLASH`, `_AT_3TO2X`, `_AT_2X`) into `AfterFXLib.dll` on *Apply theme*, restorable like everything else.
-- [ ] **A different theme per version** — e.g. one for 2026 and another for 2027.
+- [ ] **A different theme per version** — e.g. one palette for 2026 and another for 2027.
+- [ ] **Older menus** — theme the context-menu submenus that After Effects 2020 still leaves grey/green.
+
+**Later**
+
 - [ ] **Premiere Pro and Media Encoder** — they share `dvaui.dll` and Win32 menus with After Effects.
-- [ ] **More versions** — try 2020–2023 and 2025 inside After Effects (their files are already supported) and check 2019 and earlier.
+- [ ] **Theme import from editors** — turn a VS Code or terminal colour scheme into an AeTint theme.
+- [ ] **Custom splash screen out of experimental** — more layouts and a live preview.
+- [ ] **Verify every version in a running copy** — 2020–2023 and 2025 are checked against their files; 2019 and earlier aren't supported yet.
+
+**Done**
+
+- [x] **Light and sharp** — CPU renderer (~35 MB of RAM, no GPU), crisp at any display scaling *(v0.4.0)*.
+- [x] **After Effects 2020–2022** *(v0.4.0)*.
+- [x] **HSL colour picker, more presets and an optional watchdog** *(v0.4.0)*.
+- [x] **Export / import themes** — share a theme as a `.aetint` file and open it with a double-click *(v0.3.1)*.
+- [x] **Custom splash screen** *(experimental, v0.3.1)*.
 
 Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/issues).
 
 ## Credits
 
-- Built with [Slint](https://slint.dev) and Rust.
+- Built with [Slint](https://slint.dev) (software renderer) and Rust.
 - Fonts: [Inter](https://rsms.me/inter/), [Archivo](https://github.com/Omnibus-Type/Archivo) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/) — SIL Open Font License (`ui/fonts`).
 - Palettes from [Catppuccin](https://catppuccin.com), [Tokyo Night](https://github.com/enkia/tokyo-night-vscode-theme), [Rosé Pine](https://rosepinetheme.com), [Nord](https://www.nordtheme.com), [Gruvbox](https://github.com/morhetz/gruvbox), [Dracula](https://draculatheme.com), [One Dark](https://github.com/atom/atom/tree/master/packages/one-dark-ui), [Monokai](https://monokai.pro), [Solarized](https://ethanschoonover.com/solarized/), [GitHub Primer](https://primer.style), [Everforest](https://github.com/sainnhe/everforest), [Kanagawa](https://github.com/rebelot/kanagawa.nvim) and [Ayu](https://github.com/ayu-theme/ayu-colors).
 - The `dvaui.dll` colour-table approach was inspired by Nothi Theme; AeTint is an independent implementation.
+- Colour maths in [OKLab / OKLCh](https://bottosson.github.io/posts/oklab/) by Björn Ottosson.
+- Thanks to everyone who reported bugs and suggested features (the HSL picker and the Tint menu & title switch came from users).
 
 AeTint is not affiliated with or endorsed by Adobe. After Effects is a trademark of Adobe Inc.
 

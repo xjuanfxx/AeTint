@@ -18,171 +18,257 @@ const PRESETS = [
   ["AE original", ["#000000", "#1D1D1D", "#343434", "#0E0E0E", "#B0B0B0", "#066CE7"], ["#E6E6E6", "#FFFFFF", "#E6E6E6", "#F8F8F8", "#505050", "#0265DC"]],
 ];
 
-const ae = document.getElementById("ae");
-const chips = document.getElementById("chips");
-const name = document.getElementById("tryname");
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+// ── título: cada palabra en su caja, para que entre una detrás de otra
+{
+  const h = $("[data-split]");
+  let i = 0;
+  const wrap = (node) => {
+    [...node.childNodes].forEach((n) => {
+      if (n.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        n.textContent.split(/(\s+)/).forEach((part) => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) frag.append(part);
+          else {
+            const s = document.createElement("span");
+            s.className = "w";
+            s.style.setProperty("--i", i++);
+            s.textContent = part;
+            frag.append(s);
+          }
+        });
+        n.replaceWith(frag);
+      } else if (n.nodeType === 1) wrap(n);
+    });
+  };
+  if (h) wrap(h);
+}
+
+// ── vista previa de paletas
+const ae = $("#ae");
+const chips = $("#chips");
+const label = $("#tryname");
 let mode = "dark";
 let current = 0;
 
 function paint() {
-  const [label, dark, light] = PRESETS[current];
+  const [name, dark, light] = PRESETS[current];
   const p = mode === "dark" ? dark : light;
   ["base", "panel", "frame", "raised", "text", "accent"].forEach((k, i) => ae.style.setProperty(`--a-${k}`, p[i]));
-  name.textContent = `${label} · ${mode === "dark" ? "Dark" : "Light"}`;
-  chips.querySelectorAll(".chip").forEach((c, i) => {
+  label.textContent = `${name} · ${mode === "dark" ? "Dark" : "Light"}`;
+  $$(".chip", chips).forEach((c, i) => {
     c.setAttribute("aria-selected", i === current ? "true" : "false");
     const sw = mode === "dark" ? PRESETS[i][1] : PRESETS[i][2];
-    const bs = c.querySelectorAll("b");
-    [sw[1], sw[4], sw[5]].forEach((col, j) => (bs[j].style.background = col));
+    $$("b", c).forEach((b, j) => (b.style.background = [sw[1], sw[4], sw[5]][j]));
   });
 }
 
-PRESETS.forEach(([label], i) => {
+PRESETS.forEach(([name], i) => {
   const b = document.createElement("button");
   b.className = "chip";
   b.type = "button";
   b.setAttribute("role", "option");
-  b.innerHTML = `<i aria-hidden="true"><b></b><b></b><b></b></i>${label}`;
+  b.innerHTML = `<i aria-hidden="true"><b></b><b></b><b></b></i>${name}`;
   b.addEventListener("click", () => {
     stopCycle();
     current = i;
     paint();
   });
-  chips.appendChild(b);
+  chips.append(b);
 });
-
-document.querySelectorAll(".seg button").forEach((b) => {
+$$(".seg button").forEach((b) =>
   b.addEventListener("click", () => {
     stopCycle();
     mode = b.dataset.mode;
-    document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-selected", x === b ? "true" : "false"));
+    $$(".seg button").forEach((x) => x.setAttribute("aria-selected", x === b ? "true" : "false"));
     paint();
-  });
-});
-
+  })
+);
 paint();
 
-const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-// ── vista previa: los presets cambian solos mientras se ve, hasta que el usuario elige uno
+// los presets cambian solos mientras se ven, hasta que el usuario elige uno
 const CYCLE = 2800;
-const prog = document.getElementById("tryprog");
-let cycleTimer = null;
-let userPicked = false;
-function tick() {
+const prog = $("#tryprog");
+let timer = null;
+let picked = false;
+const restartBar = () => {
   prog.classList.remove("run");
-  void prog.offsetWidth; // reinicia la animación de la barra
+  void prog.offsetWidth;
   prog.classList.add("run");
-}
+};
 function startCycle() {
-  if (userPicked || reduce || cycleTimer) return;
+  if (picked || reduce || timer) return;
   prog.style.setProperty("--cycle", CYCLE + "ms");
-  tick();
-  cycleTimer = setInterval(() => {
+  restartBar();
+  timer = setInterval(() => {
     current = (current + 1) % PRESETS.length;
     paint();
-    tick();
+    restartBar();
   }, CYCLE);
 }
 function pauseCycle() {
-  clearInterval(cycleTimer);
-  cycleTimer = null;
+  clearInterval(timer);
+  timer = null;
   prog.classList.remove("run");
 }
 function stopCycle() {
-  userPicked = true;
+  picked = true;
   pauseCycle();
   prog.classList.add("off");
 }
-new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? startCycle() : pauseCycle())), { threshold: 0.35 }).observe(ae);
+new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? startCycle() : pauseCycle())), { threshold: 0.3 }).observe(ae);
 
-// ── scroll suave (Lenis); los enlaces internos también lo usan
+// ── scroll suave
 let lenis = null;
 if (!reduce && window.Lenis) {
-  lenis = new Lenis({ lerp: 0.09, smoothWheel: true, wheelMultiplier: 1 });
+  lenis = new Lenis({ lerp: 0.085, smoothWheel: true });
   const raf = (t) => {
     lenis.raf(t);
     requestAnimationFrame(raf);
   };
   requestAnimationFrame(raf);
 }
-document.querySelectorAll('a[href^="#"]').forEach((a) => {
+$$('a[href^="#"]').forEach((a) =>
   a.addEventListener("click", (e) => {
     const id = a.getAttribute("href");
-    const el = id === "#" ? document.body : document.querySelector(id);
+    const el = id === "#top" || id === "#" ? document.body : $(id);
     if (!el) return;
     e.preventDefault();
-    if (lenis) lenis.scrollTo(el, { offset: id === "#" ? 0 : -72, duration: 1.4 });
+    if (lenis) lenis.scrollTo(el === document.body ? 0 : el, { offset: -72, duration: 1.5 });
+    else if (el === document.body) window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
     else el.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
-  });
-});
+  })
+);
 
-// ── al hacer scroll: barra superior sólida y captura de la portada que se endereza
-const topBar = document.querySelector(".top");
-const shot = document.getElementById("heroShot");
+// ── barra superior y captura de la portada que se endereza al bajar
+const topBar = $(".top");
+const shot = $("#heroShot");
 function onScroll() {
-  const y = window.scrollY;
-  topBar.classList.toggle("scrolled", y > 24);
-  if (!reduce && shot) {
-    const r = shot.getBoundingClientRect();
-    const vh = window.innerHeight;
-    // 0 cuando la captura empieza a asomar abajo, 1 cuando su parte de arriba llega al tercio superior
-    const t = Math.min(1, Math.max(0, (vh - r.top) / (vh * 0.75)));
-    const e = 1 - Math.pow(1 - t, 3);
-    shot.style.setProperty("--tilt", (16 * (1 - e)).toFixed(2) + "deg");
-    shot.style.setProperty("--lift", (0.94 + 0.06 * e).toFixed(4));
-  }
+  topBar.classList.toggle("scrolled", window.scrollY > 16);
+  if (reduce || !shot) return;
+  const r = shot.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const t = Math.min(1, Math.max(0, (vh - r.top) / (vh * 0.8)));
+  const e = 1 - Math.pow(1 - t, 3);
+  shot.style.setProperty("--tilt", (18 * (1 - e)).toFixed(2) + "deg");
+  shot.style.setProperty("--lift", (0.92 + 0.08 * e).toFixed(4));
 }
 if (lenis) lenis.on("scroll", onScroll);
 else window.addEventListener("scroll", onScroll, { passive: true });
 window.addEventListener("resize", onScroll);
 onScroll();
 
-// ── apariciones: cada bloque entra al llegar a la pantalla; los de un mismo grupo, uno detrás de otro
-const groups = [
-  ".head", ".try-controls", ".ae", ".try-name",
-  ".reach-grid li", ".feat-copy h2", ".feat-list dt, .feat-list dd", ".feat-shot",
-  ".gal figure", ".step-list li", ".table-scroll", ".note",
-  ".faq details", ".final h2", ".final .cta", ".foot-row p",
-];
-groups.forEach((sel) => {
-  const els = document.querySelectorAll(sel);
-  els.forEach((el, i) => {
-    el.classList.add("rv");
-    el.style.setProperty("--i", Math.min(i, 8));
-  });
+// ── apariciones en los dos sentidos: entra al llegar a la pantalla y se va al salir
+//    (los hermanos de un mismo grupo, uno detrás de otro)
+$$("[data-rv]").forEach((el) => {
+  const sibs = [...el.parentElement.children].filter((c) => c.hasAttribute("data-rv"));
+  el.style.setProperty("--i", Math.min(sibs.indexOf(el), 6));
 });
-document.querySelectorAll(".ae, .feat-shot, .gal figure").forEach((el) => el.classList.add("rv-scale"));
-const io = new IntersectionObserver(
-  (es) =>
-    es.forEach((e) => {
-      if (e.isIntersecting) {
-        e.target.classList.add("in");
-        io.unobserve(e.target);
+const rv = new IntersectionObserver(
+  (es) => es.forEach((e) => e.target.classList.toggle("in", e.isIntersecting)),
+  { rootMargin: "0px 0px -10% 0px", threshold: 0.12 }
+);
+$$("[data-rv]").forEach((el) => rv.observe(el));
+
+// ── cifras que cuentan hasta su valor cada vez que aparecen
+const counters = $$("[data-count]");
+const count = (el) => {
+  const to = +el.dataset.count;
+  const t0 = performance.now();
+  const dur = 1400;
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / dur);
+    el.textContent = Math.round(to * (1 - Math.pow(1 - k, 4)));
+    if (k < 1) el._raf = requestAnimationFrame(step);
+  };
+  cancelAnimationFrame(el._raf);
+  el._raf = requestAnimationFrame(step);
+};
+if (!reduce) {
+  counters.forEach((el) => (el.textContent = "0"));
+  const co = new IntersectionObserver(
+    (es) => es.forEach((e) => {
+      const el = e.target.querySelector("[data-count]");
+      if (e.isIntersecting) count(el);
+      else {
+        cancelAnimationFrame(el._raf);
+        el.textContent = "0";
       }
     }),
-  { rootMargin: "0px 0px -8% 0px", threshold: 0.08 }
-);
-document.querySelectorAll(".rv").forEach((el) => io.observe(el));
+    { threshold: 0.4 }
+  );
+  $$(".stat").forEach((s) => co.observe(s));
+}
 
 // ── tarjetas: el brillo sigue al ratón
-document.querySelectorAll(".reach-grid li").forEach((li) => {
-  li.addEventListener("pointermove", (e) => {
-    const r = li.getBoundingClientRect();
-    li.style.setProperty("--mx", e.clientX - r.left + "px");
-    li.style.setProperty("--my", e.clientY - r.top + "px");
+$$(".card").forEach((c) =>
+  c.addEventListener("pointermove", (e) => {
+    const r = c.getBoundingClientRect();
+    c.style.setProperty("--mx", e.clientX - r.left + "px");
+    c.style.setProperty("--my", e.clientY - r.top + "px");
+  })
+);
+
+// ── cómo funciona: el paso que está a media pantalla manda qué captura se ve
+const steps = $$(".how-step");
+const imgs = $$(".how-img");
+{
+  const so = new IntersectionObserver(
+    (es) => es.forEach((e) => {
+      if (!e.isIntersecting) return;
+      const n = +e.target.dataset.step;
+      steps.forEach((s, i) => s.classList.toggle("is-active", i === n));
+      imgs.forEach((im, i) => im.classList.toggle("is-active", i === n));
+    }),
+    { rootMargin: "-45% 0px -45% 0px" }
+  );
+  steps.forEach((s) => so.observe(s));
+}
+
+// ── preguntas: se abren y cierran con animación de altura
+$$(".faq details").forEach((d) => {
+  const sum = $("summary", d);
+  const body = $(".faq-a", d);
+  let anim = null;
+  sum.addEventListener("click", (e) => {
+    if (reduce) return;
+    e.preventDefault();
+    if (anim) anim.cancel();
+    if (!d.open) {
+      d.open = true;
+      d.classList.add("opening");
+      const h = body.scrollHeight;
+      anim = body.animate([{ height: "0px", opacity: 0 }, { height: h + "px", opacity: 1 }], { duration: 480, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+      anim.onfinish = () => {
+        d.classList.remove("opening");
+        anim = null;
+      };
+    } else {
+      d.classList.add("closing");
+      const h = body.offsetHeight;
+      anim = body.animate([{ height: h + "px", opacity: 1 }, { height: "0px", opacity: 0 }], { duration: 380, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+      anim.onfinish = () => {
+        d.open = false;
+        d.classList.remove("closing");
+        anim = null;
+      };
+    }
   });
 });
 
-// ── entrada de la portada cuando las fuentes ya están (así el título no salta)
+// ── entrada de la portada cuando las fuentes están listas (así el título no salta)
 const ready = () => document.documentElement.classList.add("ready");
-if (document.fonts && document.fonts.ready) Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 900))]).then(ready);
+if (document.fonts && document.fonts.ready) Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 700))]).then(ready);
 else ready();
 
-// versión publicada más reciente (si GitHub no responde, se queda la escrita en la página)
+// ── versión publicada más reciente (si GitHub no responde, se queda la de la página)
 fetch("https://api.github.com/repos/xjuanfxx/AeTint/releases/latest")
   .then((r) => (r.ok ? r.json() : null))
   .then((j) => {
-    if (j && j.tag_name) document.getElementById("ver").textContent = j.tag_name.split(" ")[0];
+    if (j && j.tag_name) $("#ver").textContent = j.tag_name.split(" ")[0];
   })
   .catch(() => {});

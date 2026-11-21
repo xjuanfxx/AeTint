@@ -14,7 +14,8 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preload" href="fonts/Inter-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" href="fonts/ArchivoExpanded-ExtraBold.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=4">
+  <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
 
@@ -38,9 +39,10 @@
 <main>
 
   <section class="hero">
+    <div class="hero-glow" aria-hidden="true"><i></i><i></i></div>
     <div class="wrap">
       <p class="eyebrow">For After Effects on Windows</p>
-      <h1>Your colours,<br>all over After&nbsp;Effects.</h1>
+      <h1><span class="ln"><span>Your colours,</span></span><span class="ln"><span>all over After&nbsp;Effects.</span></span></h1>
       <p class="lede">AeTint recolours the panels, the timeline, the Home screen, the File / Edit menus and the title bar with a palette you choose. One click to apply, one click to undo.</p>
       <div class="cta">
         <a class="btn" href="https://github.com/xjuanfxx/AeTint/releases/latest/download/AeTint-Setup.exe">
@@ -50,9 +52,11 @@
         <a class="btn btn-ghost" href="https://github.com/xjuanfxx/AeTint">Source on GitHub</a>
       </div>
       <p class="meta"><span id="ver">v0.4.1</span> · Windows 10 &amp; 11 · After Effects 2020–2027 · Free, GPL-3.0</p>
-      <figure class="shot hero-shot">
-        <img src="app-dark.png" width="1180" height="800" alt="AeTint window with the Catppuccin Mocha palette: a preview of After Effects on the left, colour settings on the right">
-      </figure>
+      <div class="stage">
+        <figure class="shot hero-shot" id="heroShot">
+          <img src="app-dark.png" width="1180" height="800" alt="AeTint window with the Catppuccin Mocha palette: a preview of After Effects on the left, colour settings on the right">
+        </figure>
+      </div>
     </div>
   </section>
 
@@ -106,7 +110,7 @@
           </div>
         </div>
 
-        <p class="try-name" id="tryname" aria-live="polite">Catppuccin Mocha</p>
+        <p class="try-name"><span class="try-progress" id="tryprog"><b></b></span><span id="tryname" aria-live="polite">Catppuccin Mocha</span></p>
       </div>
     </div>
   </section>
@@ -261,6 +265,7 @@
   </div>
 </footer>
 
-<script src="main.js?v=2"></script>
+<script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="main.js?v=4"></script>
 </body>
 </html>

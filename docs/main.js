@@ -44,6 +44,7 @@ PRESETS.forEach(([label], i) => {
   b.setAttribute("role", "option");
   b.innerHTML = `<i aria-hidden="true"><b></b><b></b><b></b></i>${label}`;
   b.addEventListener("click", () => {
+    stopCycle();
     current = i;
     paint();
   });
@@ -52,6 +53,7 @@ PRESETS.forEach(([label], i) => {
 
 document.querySelectorAll(".seg button").forEach((b) => {
   b.addEventListener("click", () => {
+    stopCycle();
     mode = b.dataset.mode;
     document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-selected", x === b ? "true" : "false"));
     paint();
@@ -59,6 +61,123 @@ document.querySelectorAll(".seg button").forEach((b) => {
 });
 
 paint();
+
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ── vista previa: los presets cambian solos mientras se ve, hasta que el usuario elige uno
+const CYCLE = 2800;
+const prog = document.getElementById("tryprog");
+let cycleTimer = null;
+let userPicked = false;
+function tick() {
+  prog.classList.remove("run");
+  void prog.offsetWidth; // reinicia la animación de la barra
+  prog.classList.add("run");
+}
+function startCycle() {
+  if (userPicked || reduce || cycleTimer) return;
+  prog.style.setProperty("--cycle", CYCLE + "ms");
+  tick();
+  cycleTimer = setInterval(() => {
+    current = (current + 1) % PRESETS.length;
+    paint();
+    tick();
+  }, CYCLE);
+}
+function pauseCycle() {
+  clearInterval(cycleTimer);
+  cycleTimer = null;
+  prog.classList.remove("run");
+}
+function stopCycle() {
+  userPicked = true;
+  pauseCycle();
+  prog.classList.add("off");
+}
+new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? startCycle() : pauseCycle())), { threshold: 0.35 }).observe(ae);
+
+// ── scroll suave (Lenis); los enlaces internos también lo usan
+let lenis = null;
+if (!reduce && window.Lenis) {
+  lenis = new Lenis({ lerp: 0.09, smoothWheel: true, wheelMultiplier: 1 });
+  const raf = (t) => {
+    lenis.raf(t);
+    requestAnimationFrame(raf);
+  };
+  requestAnimationFrame(raf);
+}
+document.querySelectorAll('a[href^="#"]').forEach((a) => {
+  a.addEventListener("click", (e) => {
+    const id = a.getAttribute("href");
+    const el = id === "#" ? document.body : document.querySelector(id);
+    if (!el) return;
+    e.preventDefault();
+    if (lenis) lenis.scrollTo(el, { offset: id === "#" ? 0 : -72, duration: 1.4 });
+    else el.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
+  });
+});
+
+// ── al hacer scroll: barra superior sólida y captura de la portada que se endereza
+const topBar = document.querySelector(".top");
+const shot = document.getElementById("heroShot");
+function onScroll() {
+  const y = window.scrollY;
+  topBar.classList.toggle("scrolled", y > 24);
+  if (!reduce && shot) {
+    const r = shot.getBoundingClientRect();
+    const vh = window.innerHeight;
+    // 0 cuando la captura empieza a asomar abajo, 1 cuando su parte de arriba llega al tercio superior
+    const t = Math.min(1, Math.max(0, (vh - r.top) / (vh * 0.75)));
+    const e = 1 - Math.pow(1 - t, 3);
+    shot.style.setProperty("--tilt", (16 * (1 - e)).toFixed(2) + "deg");
+    shot.style.setProperty("--lift", (0.94 + 0.06 * e).toFixed(4));
+  }
+}
+if (lenis) lenis.on("scroll", onScroll);
+else window.addEventListener("scroll", onScroll, { passive: true });
+window.addEventListener("resize", onScroll);
+onScroll();
+
+// ── apariciones: cada bloque entra al llegar a la pantalla; los de un mismo grupo, uno detrás de otro
+const groups = [
+  ".head", ".try-controls", ".ae", ".try-name",
+  ".reach-grid li", ".feat-copy h2", ".feat-list dt, .feat-list dd", ".feat-shot",
+  ".gal figure", ".step-list li", ".table-scroll", ".note",
+  ".faq details", ".final h2", ".final .cta", ".foot-row p",
+];
+groups.forEach((sel) => {
+  const els = document.querySelectorAll(sel);
+  els.forEach((el, i) => {
+    el.classList.add("rv");
+    el.style.setProperty("--i", Math.min(i, 8));
+  });
+});
+document.querySelectorAll(".ae, .feat-shot, .gal figure").forEach((el) => el.classList.add("rv-scale"));
+const io = new IntersectionObserver(
+  (es) =>
+    es.forEach((e) => {
+      if (e.isIntersecting) {
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      }
+    }),
+  { rootMargin: "0px 0px -8% 0px", threshold: 0.08 }
+);
+document.querySelectorAll(".rv").forEach((el) => io.observe(el));
+
+// ── tarjetas: el brillo sigue al ratón
+document.querySelectorAll(".reach-grid li").forEach((li) => {
+  li.addEventListener("pointermove", (e) => {
+    const r = li.getBoundingClientRect();
+    li.style.setProperty("--mx", e.clientX - r.left + "px");
+    li.style.setProperty("--my", e.clientY - r.top + "px");
+  });
+});
+
+// ── entrada de la portada cuando las fuentes ya están (así el título no salta)
+const ready = () => document.documentElement.classList.add("ready");
+if (document.fonts && document.fonts.ready) Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 900))]).then(ready);
+else ready();
 
 // versión publicada más reciente (si GitHub no responde, se queda la escrita en la página)
 fetch("https://api.github.com/repos/xjuanfxx/AeTint/releases/latest")

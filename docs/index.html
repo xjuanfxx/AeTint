@@ -14,10 +14,28 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preload" href="fonts/Inter-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" href="fonts/ArchivoExpanded-ExtraBold.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
   <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: var(--logo-1)"/>
+      <stop offset="0.5" style="stop-color: var(--accent)"/>
+      <stop offset="1" style="stop-color: var(--logo-3)"/>
+    </linearGradient>
+    <symbol id="logo" viewBox="0 0 32 32">
+      <rect width="32" height="32" rx="8.96" fill="url(#logo-grad)"/>
+      <path d="M16 4.5C16 4.5 8.5 12.6 8.5 18.3a7.5 7.5 0 0 0 15 0C23.5 12.6 16 4.5 16 4.5Z" fill="#fff"/>
+      <rect x="11" y="15.6" width="7.5" height="1.9" rx="0.95" style="fill: var(--logo-ink)"/>
+      <rect x="13" y="18.6" width="8" height="1.9" rx="0.95" style="fill: var(--logo-ink)"/>
+      <rect x="11.5" y="21.6" width="5.5" height="1.9" rx="0.95" style="fill: var(--logo-ink)"/>
+      <rect x="17.4" y="12.6" width="1.2" height="11.8" style="fill: var(--logo-cti)"/>
+      <rect x="16.5" y="11.4" width="3" height="2.2" rx="0.7" style="fill: var(--logo-cti)"/>
+    </symbol>
+  </defs>
+</svg>
 
 <div class="bg" aria-hidden="true">
   <div class="bg-grid"></div>
@@ -28,7 +46,7 @@
 <header class="top">
   <div class="wrap top-row">
     <a class="brand" href="#top">
-      <img src="assets/icon.png" alt="" width="26" height="26">
+      <svg class="logo" width="26" height="26" aria-hidden="true"><use href="#logo"/></svg>
       <span>AeTint</span>
     </a>
     <nav class="nav" aria-label="Sections">
@@ -341,7 +359,7 @@
     <div class="wrap">
       <div class="final-card" data-rv>
         <div class="beam" aria-hidden="true"></div>
-        <img src="assets/icon.png" alt="" width="56" height="56">
+        <svg class="logo logo-lg" width="56" height="56" aria-hidden="true"><use href="#logo"/></svg>
         <h2>Make After Effects yours.</h2>
         <p>Free, open source and ready in a minute.</p>
         <div class="cta">
@@ -357,7 +375,7 @@
 <footer class="foot">
   <div class="wrap foot-grid">
     <div class="foot-brand">
-      <a class="brand" href="#top"><img src="assets/icon.png" alt="" width="24" height="24"><span>AeTint</span></a>
+      <a class="brand" href="#top"><svg class="logo" width="24" height="24" aria-hidden="true"><use href="#logo"/></svg><span>AeTint</span></a>
       <p>Full themes for After Effects on Windows.</p>
     </div>
     <div>
@@ -383,6 +401,6 @@
 </footer>
 
 <script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
-<script src="main.js?v=7"></script>
+<script src="main.js?v=8"></script>
 </body>
 </html>

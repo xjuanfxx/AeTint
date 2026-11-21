@@ -88,6 +88,13 @@ function themePage(p, light) {
   Object.entries(v).forEach(([k, val]) => root.style.setProperty(k, val));
   root.style.colorScheme = light ? "light" : "dark";
   document.querySelector('meta[name="theme-color"]').setAttribute("content", v["--bg"]);
+  // icono de la pestaña: el mismo logo con los colores del tema
+  const ink = mix(v["--bg"], "#000000", 0.15);
+  const cti = mix(accent, "#000000", 0.1);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${mix(accent, "#ffffff", 0.32)}"/><stop offset=".5" stop-color="${accent}"/><stop offset="1" stop-color="${mix(accent, "#000000", 0.45)}"/></linearGradient></defs><rect width="32" height="32" rx="8.96" fill="url(#g)"/><path d="M16 4.5C16 4.5 8.5 12.6 8.5 18.3a7.5 7.5 0 0 0 15 0C23.5 12.6 16 4.5 16 4.5Z" fill="#fff"/><rect x="11" y="15.6" width="7.5" height="1.9" rx=".95" fill="${ink}"/><rect x="13" y="18.6" width="8" height="1.9" rx=".95" fill="${ink}"/><rect x="11.5" y="21.6" width="5.5" height="1.9" rx=".95" fill="${ink}"/><rect x="17.4" y="12.6" width="1.2" height="11.8" fill="${cti}"/><rect x="16.5" y="11.4" width="3" height="2.2" rx=".7" fill="${cti}"/></svg>`;
+  let fav = document.querySelector('link[rel="icon"]');
+  fav.setAttribute("type", "image/svg+xml");
+  fav.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svg));
   clearTimeout(themeTimer);
   themeTimer = setTimeout(() => root.classList.toggle("theming", false), 700);
 }

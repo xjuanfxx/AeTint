@@ -26,6 +26,11 @@
   --mono: "JetBrains Mono", Consolas, monospace;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   color-scheme: dark;
+  /* logo: degradado del acento (más claro → acento → más oscuro), barras con el fondo, cabezal con el acento */
+  --logo-1: color-mix(in srgb, var(--accent) 68%, #fff);
+  --logo-3: color-mix(in srgb, var(--accent) 55%, #000);
+  --logo-ink: color-mix(in srgb, var(--bg) 85%, #000);
+  --logo-cti: color-mix(in srgb, var(--accent) 90%, #000);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -71,6 +76,8 @@ p { margin: 0; }
 .top-row { display: flex; align-items: center; height: 64px; gap: 24px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font: 800 1rem var(--display); letter-spacing: -0.01em; }
 .brand img { border-radius: 7px; }
+.logo { display: block; flex: none; filter: drop-shadow(0 4px 14px color-mix(in srgb, var(--accent) 45%, transparent)); }
+.logo-lg { margin: 0 auto; filter: drop-shadow(0 16px 40px color-mix(in srgb, var(--accent) 70%, transparent)); }
 .nav { display: flex; gap: 4px; margin-inline: auto; }
 .nav a { color: var(--muted); font-size: 0.9rem; padding: 7px 12px; border-radius: 8px; transition: color 0.2s, background 0.2s; }
 .nav a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }

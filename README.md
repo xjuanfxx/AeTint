@@ -14,6 +14,11 @@
   the timeline's time navigator, the Home screen, the File / Edit… menus and the title bar.
 </p>
 
+<p align="center">
+  <a href="https://xjuanfxx.github.io/AeTint/"><b>Website</b></a> ·
+  <a href="https://github.com/xjuanfxx/AeTint/releases/latest"><b>Download</b></a>
+</p>
+
 ---
 
 <p align="center">

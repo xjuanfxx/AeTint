@@ -14,7 +14,7 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preload" href="fonts/Inter-Regular.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" href="fonts/ArchivoExpanded-ExtraBold.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=10">
   <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
@@ -313,7 +313,29 @@
           </tbody>
         </table>
       </div>
-      <p class="note" data-rv><em>Files checked</em> means AeTint reads and themes that version's files correctly, but it hasn't been tried in a running copy yet. Using one? <a href="https://github.com/xjuanfxx/AeTint/issues">Let us know how it goes.</a></p>
+      <dl class="legend" data-rv>
+        <div>
+          <dt><b class="ok">Tested</b></dt>
+          <dd>Applied and checked inside a running copy of that version.</dd>
+        </div>
+        <div>
+          <dt><b class="ok">Supported</b></dt>
+          <dd>Works with any version. The menus and title bar belong to Windows, not to After Effects, so they don't depend on Adobe's files.</dd>
+        </div>
+        <div>
+          <dt><b class="chk">Files checked</b></dt>
+          <dd>AeTint reads and themes that version's files correctly, but it hasn't been tried inside a running copy yet.</dd>
+        </div>
+        <div>
+          <dt><b class="chk">Very likely</b></dt>
+          <dd>Built the same way as in the tested versions, but not checked yet.</dd>
+        </div>
+        <div>
+          <dt><span class="na">Not applicable</span></dt>
+          <dd>That version doesn't have this part in the form AeTint themes, so it stays as Adobe made it.</dd>
+        </div>
+      </dl>
+      <p class="note" data-rv>Green means confirmed, yellow means expected to work but still waiting for someone to try it. Using one of those versions? <a href="https://github.com/xjuanfxx/AeTint/issues">Let us know how it goes.</a></p>
     </div>
   </section>
 
@@ -401,6 +423,6 @@
 </footer>
 
 <script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
-<script src="main.js?v=8"></script>
+<script src="main.js?v=9"></script>
 </body>
 </html>

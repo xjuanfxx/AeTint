@@ -329,6 +329,12 @@ td:first-child { font: 600 0.98rem var(--body); }
 .na { color: var(--dim); font-size: 0.86rem; }
 .note { color: var(--muted); font-size: 0.9rem; margin-top: 18px; max-width: 72ch; }
 
+/* leyenda de la tabla: qué significa cada estado */
+.legend { margin: 22px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.legend > div { padding: 16px 18px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--text) 2%, transparent); }
+.legend dt { margin-bottom: 8px; }
+.legend dd { margin: 0; color: var(--muted); font-size: 0.88rem; line-height: 1.55; }
+
 /* ── preguntas */
 .faq-wrap { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: clamp(32px, 6vw, 96px); align-items: start; }
 .faq-wrap .sec-head { position: sticky; top: 120px; margin: 0; }

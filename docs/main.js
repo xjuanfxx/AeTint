@@ -46,6 +46,7 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
     });
   };
   if (h) wrap(h);
+  document.documentElement.classList.add("split");
 }
 
 // ── vista previa de paletas
@@ -67,6 +68,7 @@ const lum = (h) => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 let themeTimer = null;
+let themed = false; // la primera paleta (al cargar) se pone sin transición, para no pisar la entrada de la portada
 function themePage(p, light) {
   const [base, panel, , , text, accent] = p;
   const root = document.documentElement;
@@ -84,7 +86,8 @@ function themePage(p, light) {
     "--accent-2": light ? mix(accent, "#000000", 0.18) : mix(accent, "#ffffff", 0.3),
     "--accent-ink": lum(accent) > 0.35 ? "#0b0b14" : "#ffffff",
   };
-  root.classList.add("theming");
+  if (themed) root.classList.add("theming");
+  themed = true;
   Object.entries(v).forEach(([k, val]) => root.style.setProperty(k, val));
   root.style.colorScheme = light ? "light" : "dark";
   document.querySelector('meta[name="theme-color"]').setAttribute("content", v["--bg"]);
@@ -320,10 +323,22 @@ document.addEventListener("dragstart", (e) => {
   if (e.target.closest && e.target.closest("img, svg, a")) e.preventDefault();
 });
 
-// ── entrada de la portada cuando las fuentes están listas (así el título no salta)
-const ready = () => document.documentElement.classList.add("ready");
-if (document.fonts && document.fonts.ready) Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 700))]).then(ready);
-else ready();
+// ── entrada de la portada cuando las fuentes y la captura están listas (así nada salta ni aparece tarde);
+// como mucho se espera 900 ms. Dos fotogramas de margen para que el estado oculto se pinte antes de animar.
+{
+  const waits = [];
+  if (document.fonts && document.fonts.ready) waits.push(document.fonts.ready);
+  const img = $("#heroShot img");
+  if (img && img.decode) waits.push(img.decode().catch(() => {}));
+  let done = false;
+  const ready = () => {
+    if (done) return;
+    done = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add("ready")));
+    setTimeout(() => document.documentElement.classList.add("ready"), 120);
+  };
+  Promise.race([Promise.all(waits), new Promise((r) => setTimeout(r, 900))]).then(ready);
+}
 
 // ── versión publicada más reciente (si GitHub no responde, se queda la de la página)
 fetch("https://api.github.com/repos/xjuanfxx/AeTint/releases/latest")

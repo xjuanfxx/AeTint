@@ -373,15 +373,21 @@ td:first-child { font: 600 0.98rem var(--body); }
 html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
 
-/* entrada de la portada: el título palabra a palabra, desenfocado → nítido */
-.js [data-split] .w { opacity: 0; filter: blur(12px); transform: translateY(0.35em); transition: opacity 0.9s var(--ease), filter 0.9s var(--ease), transform 1.1s var(--ease); transition-delay: calc(0.08s + var(--i) * 0.06s); }
+/* entrada al cargar: todo oculto desde el primer pintado y luego en orden:
+   fondo → barra de arriba → píldora → título palabra a palabra → texto → botones → captura */
+.js .bg { opacity: 0; transform: scale(1.08); transition: opacity 1.8s var(--ease), transform 2.4s var(--ease); }
+.js .top-row { opacity: 0; transform: translateY(-14px); transition: opacity 0.9s var(--ease) 0.15s, transform 1.1s var(--ease) 0.15s; }
+.js:not(.split) [data-split] { visibility: hidden; }
+.js [data-split] .w { opacity: 0; filter: blur(12px); transform: translateY(0.4em); transition: opacity 0.9s var(--ease), filter 0.9s var(--ease), transform 1.1s var(--ease); transition-delay: calc(0.42s + var(--i) * 0.07s); }
 .js [data-hero] { opacity: 0; transform: translateY(18px); transition: opacity 1s var(--ease), transform 1.2s var(--ease); }
-.js .pill[data-hero] { transition-delay: 0s; }
-.js .lede[data-hero] { transition-delay: 0.45s; }
-.js .cta[data-hero] { transition-delay: 0.55s; }
-.js .facts[data-hero] { transition-delay: 0.65s; }
-.js .stage[data-hero] { transform: translateY(60px); transition-duration: 1.4s, 1.6s; transition-delay: 0.6s; }
-.ready [data-split] .w, .ready [data-hero] { opacity: 1; filter: none; transform: none; }
+.js .pill[data-hero] { transition-delay: 0.3s; }
+.js .lede[data-hero] { transition-delay: 0.85s; }
+.js .cta[data-hero] { transition-delay: 0.97s; }
+.js .facts[data-hero] { transition-delay: 1.09s; }
+.js .stage[data-hero] { transform: translateY(90px) scale(0.96); transition-duration: 1.4s, 1.8s; transition-delay: 1.05s; }
+.js .stage .beam { opacity: 0; transition: opacity 1.2s var(--ease) 2s; }
+.ready .bg, .ready .top-row, .ready [data-split] .w, .ready [data-hero] { opacity: 1; filter: none; transform: none; }
+.ready .stage .beam { opacity: 1; }
 
 /* apariciones al hacer scroll, en los dos sentidos (main.js pone y quita .in) */
 .js [data-rv] { opacity: 0; transform: translate3d(0, 36px, 0); transition: opacity 0.9s var(--ease), transform 1.1s var(--ease); transition-delay: calc(var(--i, 0) * 80ms); }
@@ -426,8 +432,9 @@ html.lenis, html.lenis body { height: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; }
-  .js [data-rv], .js [data-hero], .js [data-split] .w, .how-img, .how-step { transition: none !important; }
-  .js [data-rv], .js [data-hero], .js [data-split] .w { opacity: 1 !important; transform: none !important; filter: none !important; }
+  .js [data-rv], .js [data-hero], .js [data-split] .w, .js .bg, .js .top-row, .js .stage .beam, .how-img, .how-step { transition: none !important; }
+  .js [data-rv], .js [data-hero], .js [data-split] .w, .js .bg, .js .top-row, .js .stage .beam { opacity: 1 !important; transform: none !important; filter: none !important; }
+  .js [data-split] { visibility: visible !important; }
   #heroShot { transform: none; }
 }
 

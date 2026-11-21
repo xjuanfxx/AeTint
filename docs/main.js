@@ -55,10 +55,48 @@ const label = $("#tryname");
 let mode = "dark";
 let current = 0;
 
+// ── colores de toda la página a partir de una paleta (fondo, paneles, marcos, campos, texto, acento)
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const toHex = (c) => "#" + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, t) => toHex(hex(a).map((v, i) => v + (hex(b)[i] - v) * t));
+const lum = (h) => {
+  const [r, g, b] = hex(h).map((v) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+let themeTimer = null;
+function themePage(p, light) {
+  const [base, panel, , , text, accent] = p;
+  const root = document.documentElement;
+  const v = {
+    "--bg": light ? base : mix(base, "#000000", 0.35),
+    "--bg-2": light ? mix(base, panel, 0.5) : mix(base, "#000000", 0.15),
+    "--surface": light ? panel : mix(panel, base, 0.35),
+    "--surface-2": light ? mix(panel, "#ffffff", 0.4) : panel,
+    "--text": light ? mix(text, "#000000", 0.25) : mix(text, "#ffffff", 0.35),
+    "--muted": mix(text, light ? base : panel, light ? 0.3 : 0.38),
+    "--dim": mix(text, base, light ? 0.45 : 0.55),
+    "--line": light ? "rgb(0 0 0 / 0.09)" : "rgb(255 255 255 / 0.07)",
+    "--line-2": light ? "rgb(0 0 0 / 0.15)" : "rgb(255 255 255 / 0.12)",
+    "--accent": accent,
+    "--accent-2": light ? mix(accent, "#000000", 0.18) : mix(accent, "#ffffff", 0.3),
+    "--accent-ink": lum(accent) > 0.35 ? "#0b0b14" : "#ffffff",
+  };
+  root.classList.add("theming");
+  Object.entries(v).forEach(([k, val]) => root.style.setProperty(k, val));
+  root.style.colorScheme = light ? "light" : "dark";
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", v["--bg"]);
+  clearTimeout(themeTimer);
+  themeTimer = setTimeout(() => root.classList.toggle("theming", false), 700);
+}
+
 function paint() {
   const [name, dark, light] = PRESETS[current];
   const p = mode === "dark" ? dark : light;
   ["base", "panel", "frame", "raised", "text", "accent"].forEach((k, i) => ae.style.setProperty(`--a-${k}`, p[i]));
+  themePage(p, mode === "light");
   label.textContent = `${name} · ${mode === "dark" ? "Dark" : "Light"}`;
   $$(".chip", chips).forEach((c, i) => {
     c.setAttribute("aria-selected", i === current ? "true" : "false");
@@ -125,7 +163,7 @@ new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? startCycl
 // ── scroll suave
 let lenis = null;
 if (!reduce && window.Lenis) {
-  lenis = new Lenis({ lerp: 0.085, smoothWheel: true });
+  lenis = new Lenis({ lerp: 0.13, smoothWheel: true, wheelMultiplier: 1.05 });
   const raf = (t) => {
     lenis.raf(t);
     requestAnimationFrame(raf);
@@ -258,6 +296,21 @@ $$(".faq details").forEach((d) => {
       };
     }
   });
+});
+
+// ── fuera de pantalla no se anima: la luz que recorre los marcos y la cinta de versiones
+{
+  const po = new IntersectionObserver((es) => es.forEach((e) => e.target.classList.toggle("off", !e.isIntersecting)), { rootMargin: "100px" });
+  $$(".frame, .final-card, .marquee").forEach((el) => po.observe(el));
+}
+
+// ── imágenes, logos e iconos: sin menú de clic derecho ni arrastrar
+$$("img").forEach((im) => im.setAttribute("draggable", "false"));
+document.addEventListener("contextmenu", (e) => {
+  if (e.target.closest("img, svg, figure, .frame, .brand, .viz, .ae")) e.preventDefault();
+});
+document.addEventListener("dragstart", (e) => {
+  if (e.target.closest && e.target.closest("img, svg, a")) e.preventDefault();
 });
 
 // ── entrada de la portada cuando las fuentes están listas (así el título no salta)

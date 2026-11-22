@@ -83,7 +83,6 @@ f_brand = ImageFont.truetype(os.path.join(F, 'ArchivoExpanded-ExtraBold.ttf'), 3
 f_h1 = ImageFont.truetype(os.path.join(F, 'ArchivoExpanded-ExtraBold.ttf'), 60 * S)
 f_body = ImageFont.truetype(os.path.join(F, 'Inter-Medium.ttf'), 22 * S)
 f_pill = ImageFont.truetype(os.path.join(F, 'Inter-Medium.ttf'), 17 * S)
-f_mono = ImageFont.truetype(os.path.join(F, 'JetBrainsMono-Medium.ttf'), 15 * S)
 X = 72 * S
 
 # logo de la app (mismo dibujo que en la web), con su resplandor
@@ -115,20 +114,23 @@ base.alpha_composite(lg, (X, 62 * S))
 d = ImageDraw.Draw(base)
 d.text((X + L + 16 * S, 62 * S + L // 2), 'AeTint', font=f_brand, fill=text, anchor='lm')
 
-# píldora con la versión
+# píldora: "Free & open source" en Archivo, con un punto mauve que brilla
 py = 150 * S
-tag = 'v0.4.2'
-tw = d.textlength(tag, font=f_mono)
+f_tag = ImageFont.truetype(os.path.join(F, 'ArchivoExpanded-ExtraBold.ttf'), 15 * S)
 label = 'Free & open source'
-lw = d.textlength(label, font=f_pill)
-pw = int(6 * S + tw + 22 * S + 12 * S + lw + 16 * S)
+lw = d.textlength(label, font=f_tag)
+pw = int(18 * S + 10 * S + 12 * S + lw + 20 * S)
 glass = Image.new('RGBA', base.size, (0, 0, 0, 0))
-ImageDraw.Draw(glass).rounded_rectangle([X, py, X + pw, py + 38 * S], 19 * S, fill=(205, 214, 244, 14), outline=(205, 214, 244, 40), width=S)
+gd = ImageDraw.Draw(glass)
+gd.rounded_rectangle([X, py, X + pw, py + 38 * S], 19 * S, fill=(203, 166, 247, 26), outline=(203, 166, 247, 90), width=S)
 base = Image.alpha_composite(base, glass)
+dot = Image.new('RGBA', base.size, (0, 0, 0, 0))
+cx, cy = X + 18 * S + 5 * S, py + 19 * S
+ImageDraw.Draw(dot).ellipse([cx - 9 * S, cy - 9 * S, cx + 9 * S, cy + 9 * S], fill=mauve + (160,))
+base = Image.alpha_composite(base, dot.filter(ImageFilter.GaussianBlur(6 * S)))
 d = ImageDraw.Draw(base)
-d.rounded_rectangle([X + 6 * S, py + 6 * S, X + 6 * S + tw + 22 * S, py + 32 * S], 13 * S, fill=mauve)
-d.text((X + 6 * S + 11 * S, py + 19 * S), tag, font=f_mono, fill=crust, anchor='lm')
-d.text((X + 6 * S + tw + 22 * S + 12 * S, py + 19 * S), label, font=f_pill, fill=sub, anchor='lm')
+d.ellipse([cx - 5 * S, cy - 5 * S, cx + 5 * S, cy + 5 * S], fill=mauve)
+d.text((X + 18 * S + 10 * S + 12 * S, py + 19 * S), label, font=f_tag, fill=(226, 207, 251), anchor='lm')
 
 # título: tres líneas, la última con degradado lavanda → mauve → rosa
 lines = ['Theme every', 'corner of', 'After Effects.']

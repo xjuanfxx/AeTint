@@ -48,6 +48,11 @@ impl AeLib {
         Ok(AeLib { res: r, version: pe::file_version(b, &res), xml })
     }
 
+    /// Solo temas XML (AE 2020/2021): toda la interfaz se colorea desde aquí.
+    pub fn xml_only(&self) -> bool {
+        self.res.is_none() && !self.xml.is_empty()
+    }
+
     pub fn json(&self, b: &[u8]) -> Result<Value, String> {
         let r = self.res.as_ref().ok_or_else(|| tr!("this version has no After Effects colour JSON", "esta versión no tiene el JSON de colores de AE"))?;
         let t = &b[r.off..r.off + r.size];

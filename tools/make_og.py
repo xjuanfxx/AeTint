@@ -117,7 +117,7 @@ d.text((X + L + 16 * S, 62 * S + L // 2), 'AeTint', font=f_brand, fill=text, anc
 
 # píldora con la versión
 py = 150 * S
-tag = 'v0.4.1'
+tag = 'v0.4.2'
 tw = d.textlength(tag, font=f_mono)
 label = 'Free & open source'
 lw = d.textlength(label, font=f_pill)

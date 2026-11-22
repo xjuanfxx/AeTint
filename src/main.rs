@@ -516,6 +516,10 @@ fn scan_status(ui: &AppWindow, targets: Vec<Target>) {
                 } else if f == FileKind::Dvaui && dvaui::Dvaui::open(&b).is_err() {
                     foreign = true;
                 }
+                // AE 2020 17.0: dvaui.dll sin tabla de colores es lo normal (el color va en AfterFXLib)
+                if f == FileKind::AeLib && foreign && aelib::AeLib::open(&b).is_ok_and(|a| a.xml_only()) {
+                    foreign = false;
+                }
                 // la versión de After Effects es la de AfterFXLib.dll (en 2020/2021 dvaui.dll lleva otra numeración,
                 // la del framework compartido con Premiere: 14.9 y 15.4)
                 if f == FileKind::AeLib {

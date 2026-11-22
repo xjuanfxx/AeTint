@@ -599,19 +599,41 @@ pub fn probe(dir: &Path, cfg: &Config) {
 pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let pal = cfg.palette.resolve()?;
     let lpal = cfg.light.resolve()?;
-    let od = original(t, FileKind::Dvaui, st)?;
-    let d = Dvaui::open(&od)?;
-    let nd = d.apply(&od, &pal, Some(&lpal))?;
-    let mut tones = Vec::new();
-    if let Some(x) = d.tone_for(&od, Kind::Darkest) {
-        tones.push(("darkest", x));
-    }
-    if let Some(x) = d.tone_for(&od, Kind::Dark) {
-        tones.push(("dark", x));
-    }
-    let light_tone = d.tone_for(&od, Kind::Light);
     let oa = original(t, FileKind::AeLib, st)?;
     let a = AeLib::open(&oa)?;
+    // AE 2020 17.0: su dvaui.dll no trae tabla de colores (solo iconos); todo el color está en los temas XML
+    // de AfterFXLib, que se recolorean solo con la paleta. Ese dvaui.dll no se toca (ni hace falta su copia).
+    let tokenless = a.xml_only() && fs::read(t.file(FileKind::Dvaui)).is_ok_and(|b| Dvaui::open(&b).is_err());
+    if tokenless {
+        // una copia guardada de otro build (p. ej. una 2020 posterior, que sí trae colores) no es el original de
+        // este: Restaurar la escribiría encima del dvaui.dll instalado
+        let bk = backup_path(t, FileKind::Dvaui);
+        if fs::read(&bk).is_ok_and(|b| Dvaui::open(&b).is_ok()) {
+            let _ = fs::remove_file(&bk);
+        }
+    }
+    let od = if tokenless { Vec::new() } else { original(t, FileKind::Dvaui, st)? };
+    let d = if tokenless { None } else { Some(Dvaui::open(&od)?) };
+    let nd = match &d {
+        Some(d) => Some(d.apply(&od, &pal, Some(&lpal))?),
+        None => None,
+    };
+    let mut tones = Vec::new();
+    let light_tone = match &d {
+        Some(d) => {
+            if let Some(x) = d.tone_for(&od, Kind::Darkest) {
+                tones.push(("darkest", x));
+            }
+            if let Some(x) = d.tone_for(&od, Kind::Dark) {
+                tones.push(("dark", x));
+            }
+            d.tone_for(&od, Kind::Light)
+        }
+        None => {
+            tones.push(("darkest", crate::remap::ToneRef::ae_darkest()));
+            Some(crate::remap::ToneRef::ae_light())
+        }
+    };
     let mut blocks: Vec<(&str, crate::remap::ToneRef, &crate::remap::Pal)> = tones.iter().map(|(b, x)| (*b, *x, &pal)).collect();
     if let Some(lt) = light_tone {
         blocks.push(("light", lt, &lpal));
@@ -624,7 +646,11 @@ pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u
         crate::splash::apply(&mut na, &res, &img, Some(&pal))?;
         crate::pe::fix_checksum(&mut na);
     }
-    let mut out = vec![(t.file(FileKind::Dvaui), nd), (t.file(FileKind::AeLib), na)];
+    let mut out = Vec::new();
+    if let Some(nd) = nd {
+        out.push((t.file(FileKind::Dvaui), nd));
+    }
+    out.push((t.file(FileKind::AeLib), na));
     // pantalla de inicio (opcional: si esta versión no la tiene o algo falla, se deja como está)
     let darkest = tones.iter().find(|x| x.0 == "darkest").map(|x| x.1);
     let dark = tones.iter().find(|x| x.0 == "dark").map(|x| x.1).or(darkest);

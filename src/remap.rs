@@ -51,6 +51,7 @@ impl Palette {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Pal {
     pub base: Rgb,
     pub panel: Rgb,

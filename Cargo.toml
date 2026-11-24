@@ -3,7 +3,7 @@ members = [".", "crates/menuhook", "crates/menutest", "crates/loader", "crates/s
 
 [package]
 name = "aetint"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 rust-version = "1.88"
 description = "AeTint — temas completos para After Effects (paneles, timeline y menús)"

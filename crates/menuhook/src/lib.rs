@@ -778,9 +778,184 @@ unsafe fn paint_popup_gaps(hwnd: HWND, hdc: HDC, m: HMENU, ox: i32, oy: i32, c: 
     RestoreDC(hdc, saved);
 }
 
+/// Flechas de desplazamiento de un menú que no cabe en la pantalla. Windows las pone en el marco de la ventana
+/// (fuera del área de las opciones: la ventana crece por arriba y por abajo) y las dibuja con el aspecto clásico,
+/// un cuadro claro con la flecha gris. Se repintan con el tema: fondo del menú y flecha del color del texto
+/// (atenuada si ya no hay más en esa dirección). `hdc`: DC de la ventana entera (origen en su esquina).
+unsafe fn paint_scroll_arrows(hwnd: HWND, hdc: HDC, c: &Colors) {
+    let mut wr: RECT = std::mem::zeroed();
+    GetWindowRect(hwnd, &mut wr);
+    let mut cr: RECT = std::mem::zeroed();
+    GetClientRect(hwnd, &mut cr);
+    let (ox, oy) = client_origin(hwnd);
+    let (fw, fh) = (wr.right - wr.left, wr.bottom - wr.top);
+    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let sc = |v: i32| v * dpi / 96;
+    // franjas: entre el borde de la ventana y el área de las opciones
+    let (top_h, bot_y) = (oy - 1, oy + cr.bottom);
+    let bot_h = fh - 1 - bot_y;
+    if top_h < sc(10) && bot_h < sc(10) {
+        return;
+    }
+    watch_arrows(hwnd);
+    // ¿queda algo arriba o abajo?
+    let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
+    let (mut above, mut below) = (false, false);
+    if !m.is_null() {
+        let mut origin = POINT { x: 0, y: 0 };
+        ClientToScreen(hwnd, &mut origin);
+        for i in 0..GetMenuItemCount(m).max(0) {
+            let mut ir: RECT = std::mem::zeroed();
+            if GetMenuItemRect(std::ptr::null_mut(), m, i as u32, &mut ir) != 0 {
+                above |= ir.top < origin.y;
+                below |= ir.bottom > origin.y + cr.bottom;
+            }
+        }
+    }
+    let _ = ox;
+    for (y0, h, on, point_up) in [(1, top_h, above, true), (bot_y, bot_h, below, false)] {
+        if h < sc(10) {
+            continue;
+        }
+        fill(hdc, &RECT { left: 1, top: y0, right: fw - 1, bottom: y0 + h }, c.popup);
+        let (cx, cy) = (fw / 2, y0 + h / 2);
+        let (w, t) = (sc(4), sc(2));
+        let pts = if point_up {
+            [POINT { x: cx - w, y: cy + t }, POINT { x: cx, y: cy - t }, POINT { x: cx + w, y: cy + t }]
+        } else {
+            [POINT { x: cx - w, y: cy - t }, POINT { x: cx, y: cy + t }, POINT { x: cx + w, y: cy - t }]
+        };
+        poly(hdc, &pts, if on { c.text } else { c.text_disabled }, sc(1).max(1) + 1);
+    }
+}
+
+/// Menús largos abiertos: Windows vuelve a dibujar sus flechas clásicas desde el núcleo (win32k), sin pasar por
+/// nada que se pueda interceptar. Mientras haya uno abierto, un temporizador del hilo repinta las nuestras cada
+/// ~30 ms (los temporizadores del hilo siguen llegando con el menú abierto).
+/// (ventana, menú al que se le puso el pincel de fondo (0 = aún no), cuándo se vio por primera vez)
+static ARROW_WINS: Mutex<Vec<(isize, isize, u32)>> = Mutex::new(Vec::new());
+static ARROW_TIMER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Milisegundos desde que se cargó la DLL.
+fn now_ms() -> u32 {
+    static T0: OnceLock<std::time::Instant> = OnceLock::new();
+    T0.get_or_init(std::time::Instant::now).elapsed().as_millis() as u32
+}
+
+unsafe extern "system" fn arrow_tick(_: HWND, _: u32, _: usize, _: u32) {
+    let wins: Vec<(isize, isize, u32)> = ARROW_WINS.lock().map(|g| g.clone()).unwrap_or_default();
+    let mut alive = Vec::new();
+    for (h, m, t0) in wins {
+        let w = h as HWND;
+        if IsWindow(w) != 0 && IsWindowVisible(w) != 0 {
+            let mut m = m;
+            if let Some(c) = colors() {
+                // el pincel, una vez abierto y dibujado el menú (puesto al abrirse, Windows lo redibujaba por el
+                // camino sin tema: unos fotogramas en gris)
+                if m == 0 && now_ms().wrapping_sub(t0) > 200 {
+                    m = set_arrow_brush(w, &c);
+                }
+                repaint_scroll_arrows(w, &c);
+            }
+            alive.push((h, m, t0));
+        } else {
+            drop_arrow_brush(m);
+        }
+    }
+    if let Ok(mut g) = ARROW_WINS.lock() {
+        g.retain(|x| alive.iter().any(|a| a.0 == x.0));
+        for x in g.iter_mut() {
+            if let Some(a) = alive.iter().find(|a| a.0 == x.0) {
+                x.1 = a.1;
+            }
+        }
+        if g.is_empty() {
+            let id = ARROW_TIMER.swap(0, std::sync::atomic::Ordering::Relaxed);
+            if id != 0 {
+                KillTimer(std::ptr::null_mut(), id);
+            }
+        }
+    }
+}
+
+/// Pone el pincel de fondo del tema en el menú de la ventana (si no tenía uno propio). Devuelve el menú, o -1 si
+/// no se puso (para no volver a intentarlo).
+unsafe fn set_arrow_brush(hwnd: HWND, c: &Colors) -> isize {
+    let m = SendMessageW(hwnd, MN_GETHMENU_, 0, 0) as HMENU;
+    if m.is_null() {
+        return -1;
+    }
+    let mut mi: MENUINFO = std::mem::zeroed();
+    mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
+    mi.fMask = MIM_BACKGROUND;
+    GetMenuInfo(m, &mut mi);
+    // los menús con columnas tienen el nuestro a propósito
+    if !mi.hbrBack.is_null() {
+        return -1;
+    }
+    mi.fMask = MIM_BACKGROUND;
+    mi.hbrBack = popup_brush(c.popup);
+    SetMenuInfo(m, &mi);
+    m as isize
+}
+
+/// Quita el pincel de fondo puesto para las flechas. Si se quedara, la próxima vez Windows crearía la ventana
+/// del menú por el camino sin tema (un instante en blanco y luego gris) antes de que la DLL lo corrija.
+unsafe fn drop_arrow_brush(m: isize) {
+    if m <= 0 {
+        return;
+    }
+    let m = m as HMENU;
+    if m.is_null() || IsMenu(m) == 0 {
+        return;
+    }
+    let mut mi: MENUINFO = std::mem::zeroed();
+    mi.cbSize = std::mem::size_of::<MENUINFO>() as u32;
+    mi.fMask = MIM_BACKGROUND;
+    mi.hbrBack = std::ptr::null_mut();
+    SetMenuInfo(m, &mi);
+}
+
+/// Al cerrarse un menú largo: fuera de la lista y sin el pincel.
+unsafe fn forget_arrows(hwnd: HWND) {
+    let gone: Vec<isize> = ARROW_WINS.lock().map(|mut g| {
+        let out = g.iter().filter(|x| x.0 == hwnd as isize).map(|x| x.1).collect();
+        g.retain(|x| x.0 != hwnd as isize);
+        out
+    }).unwrap_or_default();
+    for m in gone {
+        drop_arrow_brush(m);
+    }
+}
+
+/// Apunta un menú largo para el repintado periódico de sus flechas. Windows rellena el cuadro de su flecha con el
+/// pincel de fondo del menú (si no tiene, con el gris claro del sistema): el del tema se le pone un poco después
+/// de abrirse (arrow_tick) y se quita al cerrarse (drop_arrow_brush).
+unsafe fn watch_arrows(hwnd: HWND) {
+    if let Ok(mut g) = ARROW_WINS.lock() {
+        if !g.iter().any(|x| x.0 == hwnd as isize) {
+            g.push((hwnd as isize, 0, now_ms()));
+        }
+    }
+    if ARROW_TIMER.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+        let id = SetTimer(std::ptr::null_mut(), 0, 30, Some(arrow_tick));
+        ARROW_TIMER.store(id, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Repinta las flechas con un DC de la ventana entera (fuera de WM_NCPAINT).
+unsafe fn repaint_scroll_arrows(hwnd: HWND, c: &Colors) {
+    let hdc = GetWindowDC(hwnd);
+    paint_scroll_arrows(hwnd, hdc, c);
+    ReleaseDC(hwnd, hdc);
+}
+
 unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     let Some(old) = old_proc(hwnd) else { return DefWindowProcW(hwnd, msg, wp, lp) };
     let call_old = |m, w, l| CallWindowProcW(Some(std::mem::transmute::<isize, WndProcFn>(old)), hwnd, m, w, l);
+    if msg == WM_NCDESTROY || (msg == WM_SHOWWINDOW && wp == 0) {
+        forget_arrows(hwnd);
+    }
     if msg == WM_NCDESTROY {
         if let Ok(mut m) = OLD_PROCS.lock() {
             if let Some(m) = m.as_mut() {
@@ -798,6 +973,7 @@ unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
         WM_NCPAINT => {
             let hdc = GetWindowDC(hwnd);
             paint_popup_frame(hwnd, hdc, &c);
+            paint_scroll_arrows(hwnd, hdc, &c);
             ReleaseDC(hwnd, hdc);
             0
         }
@@ -807,16 +983,27 @@ unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
             fill(wp as HDC, &cr, c.popup);
             1
         }
-        WM_PAINT if cols.is_some() => {
+        WM_PAINT => {
             let r = call_old(msg, wp, lp);
-            let hdc = GetDC(hwnd);
-            paint_popup_gaps(hwnd, hdc, cols.unwrap(), 0, 0, &c);
-            ReleaseDC(hwnd, hdc);
+            if let Some(m) = cols {
+                let hdc = GetDC(hwnd);
+                paint_popup_gaps(hwnd, hdc, m, 0, 0, &c);
+                ReleaseDC(hwnd, hdc);
+            }
+            repaint_scroll_arrows(hwnd, &c);
             r
         }
-        WM_PRINTCLIENT if cols.is_some() => {
+        WM_PRINTCLIENT => {
             let r = call_old(msg, wp, lp);
-            paint_popup_gaps(hwnd, wp as HDC, cols.unwrap(), 0, 0, &c);
+            if let Some(m) = cols {
+                paint_popup_gaps(hwnd, wp as HDC, m, 0, 0, &c);
+            }
+            r
+        }
+        // al desplazarse (temporizador mientras el ratón está sobre una flecha) Windows vuelve a dibujar las suyas
+        WM_TIMER | WM_MOUSEMOVE | WM_KEYDOWN | WM_MOUSEWHEEL => {
+            let r = call_old(msg, wp, lp);
+            repaint_scroll_arrows(hwnd, &c);
             r
         }
         WM_PRINT => {
@@ -827,9 +1014,12 @@ unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
             if nc {
                 paint_popup_frame(hwnd, hdc, &c);
             }
+            let (ox, oy) = if nc { client_origin(hwnd) } else { (0, 0) };
             if let Some(m) = cols {
-                let (ox, oy) = if nc { client_origin(hwnd) } else { (0, 0) };
                 paint_popup_gaps(hwnd, hdc, m, ox, oy, &c);
+            }
+            if nc {
+                paint_scroll_arrows(hwnd, hdc, &c);
             }
             r
         }
@@ -1066,6 +1256,7 @@ struct Hooks {
     dwm: Option<RawDetour>,
     fill: Option<RawDetour>,
     patblt: Option<RawDetour>,
+    frame_ctl: Option<RawDetour>,
 }
 unsafe impl Send for Hooks {}
 unsafe impl Sync for Hooks {}
@@ -1399,6 +1590,55 @@ unsafe fn fill_hook() -> Option<RawDetour> {
     RawDetour::new(f as *const (), h_fill as *const ()).ok()
 }
 
+type FnFrameCtl = unsafe extern "system" fn(HDC, *mut RECT, u32, u32) -> i32;
+
+/// Flechas de desplazamiento de los menús largos: Windows las dibuja con DrawFrameControl (aspecto clásico, un
+/// cuadro claro con la flecha gris), a veces fuera de los mensajes de la ventana. Se dibujan con el tema.
+unsafe extern "system" fn h_frame_ctl(hdc: HDC, rc: *mut RECT, kind: u32, state: u32) -> i32 {
+    let orig: FnFrameCtl = std::mem::transmute(HOOKS.get().unwrap().frame_ctl.as_ref().unwrap().trampoline());
+    const DFC_MENU_: u32 = 2;
+    const UP: u32 = 0x0008;
+    const DOWN: u32 = 0x0010;
+    const INACTIVE: u32 = 0x0100;
+    if kind != DFC_MENU_ || state & (UP | DOWN) == 0 || rc.is_null() {
+        return orig(hdc, rc, kind, state);
+    }
+    let Some(c) = colors() else { return orig(hdc, rc, kind, state) };
+    // solo en las ventanas de menú
+    let w = WindowFromDC(hdc);
+    let mut cls = [0u16; 16];
+    let n = if w.is_null() { 0 } else { GetClassNameW(w, cls.as_mut_ptr(), cls.len() as i32) };
+    // a veces Windows dibuja el menú en un búfer en memoria y el DC no da la ventana: vale estar dentro de un menú
+    if String::from_utf16_lossy(&cls[..n.max(0) as usize]) != "#32768" && !menu_mode() {
+        return orig(hdc, rc, kind, state);
+    }
+    let r = *rc;
+    fill(hdc, &r, c.popup);
+    // tamaño según el cuadro de la flecha (sigue la escala de la pantalla sin necesitar la ventana)
+    let side = (r.bottom - r.top).min(r.right - r.left).max(8);
+    let sc = |v: i32| v * side / 16;
+    let (cx, cy) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    let (hw, t) = (sc(4), sc(2));
+    let pts = if state & UP != 0 {
+        [POINT { x: cx - hw, y: cy + t }, POINT { x: cx, y: cy - t }, POINT { x: cx + hw, y: cy + t }]
+    } else {
+        [POINT { x: cx - hw, y: cy - t }, POINT { x: cx, y: cy + t }, POINT { x: cx + hw, y: cy - t }]
+    };
+    poly(hdc, &pts, if state & INACTIVE != 0 { c.text_disabled } else { c.text }, sc(1).max(1) + 1);
+    log(&format!("flecha DrawFrameControl {state:#x}"));
+    1
+}
+
+unsafe fn frame_ctl_hook() -> Option<RawDetour> {
+    let name = wide("user32.dll");
+    let m = GetModuleHandleW(name.as_ptr());
+    if m.is_null() {
+        return None;
+    }
+    let f = GetProcAddress(m, c"DrawFrameControl".as_ptr() as *const u8)?;
+    RawDetour::new(f as *const (), h_frame_ctl as *const ()).ok()
+}
+
 unsafe fn patblt_hook() -> Option<RawDetour> {
     let name = wide("gdi32.dll");
     let m = GetModuleHandleW(name.as_ptr());
@@ -1449,12 +1689,13 @@ unsafe fn install_hooks() {
         dwm: dwm_hook(),
         fill: fill_hook(),
         patblt: patblt_hook(),
+        frame_ctl: frame_ctl_hook(),
     };
     if HOOKS.set(hooks).is_err() {
         return;
     }
     let h = HOOKS.get().unwrap();
-    for d in [&h.open, &h.open_dpi, &h.open_ex, &h.bg, &h.text, &h.text_ex, &h.bg_ex, &h.color, &h.dwm, &h.fill, &h.patblt].into_iter().flatten() {
+    for d in [&h.open, &h.open_dpi, &h.open_ex, &h.bg, &h.text, &h.text_ex, &h.bg_ex, &h.color, &h.dwm, &h.fill, &h.patblt, &h.frame_ctl].into_iter().flatten() {
         let _ = d.enable();
     }
 }

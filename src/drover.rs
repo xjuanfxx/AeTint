@@ -61,16 +61,21 @@ fn resolve(ents: &HashMap<String, String>, v: &str) -> Option<f32> {
     v.trim().parse().ok()
 }
 
-/// Atributos de una etiqueta, en orden.
+/// Atributos de una etiqueta, en orden. Admite espacios alrededor del "=" (`h = "0"`): AE 2023 y anteriores
+/// escriben así varios colores, y sin leerlos se perdían su tono y su saturación (el playhead rojo salía gris).
 fn attrs(tag: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut rest = tag;
-    while let Some(eq) = rest.find("=\"") {
+    while let Some(eq) = rest.find('=') {
         let key = rest[..eq].split_whitespace().last().unwrap_or("").to_string();
-        let after = &rest[eq + 2..];
-        let Some(end) = after.find('"') else { break };
-        out.push((key, after[..end].to_string()));
-        rest = &after[end + 1..];
+        let after = rest[eq + 1..].trim_start();
+        let Some(val) = after.strip_prefix('"') else {
+            rest = &rest[eq + 1..];
+            continue;
+        };
+        let Some(end) = val.find('"') else { break };
+        out.push((key, val[..end].to_string()));
+        rest = &val[end + 1..];
     }
     out
 }
@@ -228,12 +233,26 @@ fn tone_of(kfs: &[&Kf], ents: &HashMap<String, String>, dark: bool) -> Option<To
     None
 }
 
+/// Nombre comparable entre el JSON de 2025+ y estos temas: "time-ruler-cti-comp" y
+/// "kAEColor_TimeRuler_CTI_COMP" dan los dos "timerulercticomp".
+fn plain(n: &str) -> String {
+    let n: String = n.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase();
+    for p in ["kaecolor", "kcolor"] {
+        if let Some(x) = n.strip_prefix(p) {
+            return x.to_string();
+        }
+    }
+    n
+}
+
 /// Recolorea un recurso XML de temas. Devuelve el texto nuevo con la misma longitud en bytes.
 /// `shared`: grises de referencia por tema de los recursos ya procesados; se completa con los de este.
-pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap<String, ToneRef>) -> Result<Vec<u8>, String> {
+/// `overrides`: colores a mano (claves del JSON de 2025+, sin "ae-color-"); solo en los brillos oscuros.
+pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap<String, ToneRef>, overrides: &std::collections::BTreeMap<String, String>) -> Result<Vec<u8>, String> {
     let s = std::str::from_utf8(orig).map_err(|_| tr!("XML theme: not UTF-8", "tema XML: no es UTF-8"))?;
     let ents = entities(s);
     let kfs = keyframes(s);
+    let hand: HashMap<String, Rgb> = overrides.iter().filter_map(|(k, v)| Some((plain(k), crate::color::parse_hex(v)?))).collect();
 
     // referencia por brillo: los temas con nombre (V5/V6) usan sus propios grises; los fotogramas con "t"
     // (AECOLORTHEMES) usan los extremos del deslizador: oscuro = fondo 0.0 / paneles 0.15, claro = el de AE
@@ -293,10 +312,12 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
                 None => continue,
             }
         };
+        // color elegido a mano (playhead, keyframe, capa seleccionada…): manda sobre todo lo demás
+        let picked = if dark { hand.get(&plain(name)).copied() } else { None };
         // veladuras (alfa < 1): se dejan, salvo el velo del área de trabajo de la timeline: un gris medio al 15 %
         // que AE pone encima de la zona de capas; con el gris de Adobe la deja grisácea, con la paleta queda en su tono
         let wash = token(name).contains("workareawash");
-        if !wash && get(&k.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
+        if picked.is_none() && !wash && get(&k.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
             continue;
         }
         // el color de este fotograma: el del extremo de su mitad del deslizador (si lo hay)
@@ -304,14 +325,16 @@ pub fn recolor(orig: &[u8], pal: &Pal, light: Option<&Pal>, shared: &mut HashMap
             Some(t) => anchors.get(&(name.to_string(), t <= 0.5)).map_or(k, |&(_, i)| &kfs[i]),
             None => k,
         };
-        if !wash && src.attrs.iter().any(|(key, _)| key == "a") && get(&src.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
+        if picked.is_none() && !wash && src.attrs.iter().any(|(key, _)| key == "a") && get(&src.attrs, "a").and_then(|x| resolve(&ents, x)).is_some_and(|a| a < 1.0) {
             continue;
         }
         let Some(v) = get(&src.attrs, "v").and_then(|v| resolve(&ents, v)) else { continue };
         let sat = get(&src.attrs, "s").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
         let h = get(&src.attrs, "h").and_then(|x| resolve(&ents, x)).unwrap_or(0.0);
         let n = token(name);
-        let new = if wash {
+        let new = if let Some(c) = picked {
+            c
+        } else if wash {
             // el velo del área de trabajo: entre los marcos y el texto; al 15 % sobre los paneles da el mismo tono
             // un poco más claro que pinta AE 2025+ en la zona de capas
             crate::color::mix(p.frame, p.text, 0.25)
@@ -427,7 +450,7 @@ mod tests {
     fn recolors_and_keeps_length() {
         let x = "<?xml version=\"1.0\"?>\n<!DOCTYPE T [\n  <!ENTITY Darkest \"0.0\">\n  <!ENTITY kColor_ApplicationBackground \"1\">\n  <!ENTITY kColor_ContentBackground \"2\">\n  <!ENTITY g1 \"0.0863\">\n]>\n<ThemeParameters>\n  <ThemeColors>\n    <Theme t=\"&Darkest;\" >\n      <KeyFrame name=\"&kColor_ApplicationBackground;\"      v=\"&g1;\" />\n      <KeyFrame name=\"&kColor_ContentBackground;\"          v=\"0.1373\" />\n      <KeyFrame name=\"&kColor_Blue;\"   h=\"210\" s=\"0.8\" v=\"0.92\" />\n    </Theme>\n  </ThemeColors>\n</ThemeParameters>\n";
         let pal = crate::remap::Palette::default().resolve().unwrap();
-        let out = recolor(x.as_bytes(), &pal, None, &mut HashMap::new()).unwrap();
+        let out = recolor(x.as_bytes(), &pal, None, &mut HashMap::new(), &Default::default()).unwrap();
         assert_eq!(out.len(), x.len());
         let o = String::from_utf8(out).unwrap();
         assert!(o.contains("kColor_ApplicationBackground;\" h="), "{o}");

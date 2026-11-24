@@ -27,9 +27,8 @@ pub struct AeLib {
 pub const GROUPS: &[(&str, &str, &[&str])] = &[
     ("navigator", "Navigator", &["time-ruler-abs-grad-start", "time-ruler-abs-grad-end"]),
     ("workarea", "Work area", &["time-ruler-work-area-grad-start", "time-ruler-work-area-grad-end"]),
-    ("cti", "Playhead (CTI)", &["time-ruler-cti-comp", "time-ruler-cti-layer"]),
-    ("layersel", "Selected layer", &["tl-layer-bar-sel-grad-start", "tl-layer-bar-sel-grad-end"]),
-    ("keyframe", "Keyframe", &["timelinegekeyframe-selected"]),
+    // el playhead y los keyframes los pinta AE con el color de resaltado (el acento de la paleta), y la capa
+    // seleccionada con el color de etiqueta de sus preferencias: esas claves no cambian nada, así que no se ofrecen
 ];
 
 impl AeLib {
@@ -108,7 +107,7 @@ impl AeLib {
             if let Some(dark) = dark {
                 let mut shared = std::collections::HashMap::new();
                 for x in &self.xml {
-                    let new = crate::drover::recolor(&orig[x.off..x.off + x.size], dark, light, &mut shared)?;
+                    let new = crate::drover::recolor(&orig[x.off..x.off + x.size], dark, light, &mut shared, overrides)?;
                     b[x.off..x.off + x.size].copy_from_slice(&new);
                 }
             }

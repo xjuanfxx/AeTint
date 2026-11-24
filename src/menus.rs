@@ -39,15 +39,17 @@ fn menu_set(p: &Palette) -> Result<MenuSet, String> {
     let pal = p.resolve()?;
     let h = color::to_hex;
     Ok(MenuSet {
-        bar: h(pal.base),
-        bar_hover: h(pal.frame),
+        // barra de menús y de título: entre los paneles y el fondo (un toque más oscura que los paneles para
+        // distinguirse, sin llegar al negro del fondo); la vista previa usa el mismo tono
+        bar: h(color::mix(pal.panel, pal.base, 0.5)),
+        bar_hover: h(color::mix(color::mix(pal.panel, pal.base, 0.5), pal.accent, 0.25)),
         text: h(pal.text),
         text_hover: h(color::mix(pal.text, [1.0; 3], 0.35)),
         text_disabled: h(color::mix(pal.text, pal.panel, 0.55)),
         popup: h(pal.panel),
         popup_hover: h(color::mix(pal.frame, pal.accent, 0.25)),
         border: h(pal.frame),
-        title: h(pal.base),
+        title: h(color::mix(pal.panel, pal.base, 0.5)),
         title_text: h(pal.text),
     })
 }

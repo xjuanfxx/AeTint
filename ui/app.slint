@@ -14,6 +14,8 @@ export struct ColorEntry {
     hex: string,
     value: color,
     custom: bool,
+    // lo pinta AE por su cuenta: se muestra, pero no se puede cambiar
+    locked: bool,
 }
 
 export struct TargetItem {
@@ -610,8 +612,10 @@ component TlRow inherits Rectangle {
     border-radius: 6px;
     background: ta.has-hover ? Ui.p.raised.with-alpha(0.6) : transparent;
     ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.toggled(!root.entry.custom); }
+        mouse-cursor: root.entry.locked ? default : pointer;
+        clicked => {
+            if (!root.entry.locked) { root.toggled(!root.entry.custom); }
+        }
     }
     HorizontalLayout {
         padding-left: 6px;
@@ -628,6 +632,7 @@ component TlRow inherits Rectangle {
                 border-color: Ui.p.frame;
                 opacity: root.entry.custom ? 1 : 0.6;
                 TouchArea {
+                    enabled: !root.entry.locked;
                     mouse-cursor: pointer;
                     clicked => {
                         if (!root.entry.custom) { root.toggled(true); }
@@ -649,13 +654,37 @@ component TlRow inherits Rectangle {
             overflow: elide;
         }
         Text {
-            text: root.entry.custom ? root.entry.hex : Ui.t("Auto", "Auto");
+            text: root.entry.locked ? Ui.t("Set by AE", "Lo pone AE") : root.entry.custom ? root.entry.hex : Ui.t("Auto", "Auto");
             color: Ui.p.muted;
             font-size: 11px;
             font-family: root.entry.custom ? "JetBrains Mono" : "Inter";
             vertical-alignment: center;
         }
-        VerticalLayout { alignment: center; Check { checked: root.entry.custom; } }
+        // misma anchura que la casilla, para que los textos queden alineados
+        VerticalLayout { alignment: center; Check { checked: root.entry.custom; opacity: root.entry.locked ? 0 : 1; } }
+    }
+    // nota al pasar el ratón por una fila bloqueada
+    if root.entry.locked && ta.has-hover: Rectangle {
+        x: 0;
+        y: -note.preferred-height - 14px;
+        width: root.width;
+        height: note.preferred-height + 12px;
+        border-radius: 6px;
+        background: Ui.p.base;
+        border-width: 1px;
+        border-color: Ui.p.frame;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000060;
+        note := Text {
+            x: 8px;
+            width: parent.width - 16px;
+            text: root.entry.key == "layersel"
+                ? Ui.t("Not editable yet: After Effects uses your label colours from its preferences.", "Aún no se puede cambiar: After Effects usa los colores de etiqueta de sus preferencias.")
+                : Ui.t("Not editable yet: After Effects paints it with the accent colour.", "Aún no se puede cambiar: After Effects lo pinta con el color de acento.");
+            color: Ui.p.text;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
     }
     popup := PopupWindow {
         x: -258px;
@@ -963,7 +992,8 @@ component AePreview inherits Rectangle {
             height: 30px;
             border-radius: 6px;
             // apagado: la barra como la deja Windows
-            background: root.menus ? Ui.p.frame : #2b2b2b;
+            // el mismo tono que AeTint da a la barra de menús de AE: entre los paneles y el fondo
+            background: root.menus ? Ui.p.panel.mix(Ui.p.base, 0.5) : #2b2b2b;
             HorizontalLayout {
                 padding-left: 10px;
                 padding-right: 6px;
@@ -1197,6 +1227,8 @@ export component AppWindow inherits Window {
     in-out property <bool> autostart;
     in-out property <bool> watcher;
     in-out property <bool> sounds: true;
+    in-out property <bool> splash-frame: false;
+    callback set-splash-frame(bool);
     callback toggle-sounds(bool);
 
     callback toggle-target(string, bool);
@@ -1249,6 +1281,13 @@ export component AppWindow inherits Window {
     // pantalla de inicio propia ("" = la de Adobe)
     in property <string> splash-name;
     in property <image> splash-thumb;
+    // encuadre: proporción de la imagen, punto de enfoque (0..1) y si lo elige AeTint
+    in property <float> splash-aspect: 1.6;
+    in property <float> splash-fx: 0.5;
+    in property <float> splash-fy: 0.5;
+    in property <bool> splash-auto: true;
+    callback set-splash-focus(float, float);
+    callback auto-splash-focus();
     callback choose-splash();
     callback clear-splash();
     callback start-drag();
@@ -1517,13 +1556,29 @@ export component AppWindow inherits Window {
                     min-height: 250px;
                     menus: root.menus;
                     toggle-menus => { root.toggle-menus(!root.menus); }
+                    // la paleta clara solo existe donde AE trae el brillo Light (2025 en adelante)
+                    if root.edit-light: Rectangle {
+                        x: parent.width - self.width - 14px;
+                        y: parent.height - self.height - 14px;
+                        width: light-note.preferred-width + 20px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: Ui.p.base.with-alpha(0.92);
+                        border-width: 1px;
+                        border-color: Ui.p.frame;
+                        light-note := Text {
+                            text: Ui.t("Light palette: AE 2025 and newer, with AE's Light brightness", "Paleta clara: AE 2025 en adelante, con el brillo Light de AE");
+                            color: Ui.p.text;
+                            font-size: 11px;
+                        }
+                    }
                 }
 
                 HorizontalLayout {
                     spacing: 12px;
                     height: 26px;
                     Seg {
-                        items: [Ui.t("PRESETS", "PRESETS"), Ui.t("MY THEMES", "MIS TEMAS") + (root.themes.length > 0 ? " · " + root.themes.length : "")];
+                        items: [Ui.t("PRESETS", "PRESETS"), Ui.t("MY THEMES", "MIS TEMAS") + (root.themes.length > 0 ? " · " + root.themes.length : ""), Ui.t("SPLASH", "SPLASH")];
                         current: root.lib-tab;
                         picked(k) => { root.lib-tab = k; }
                     }
@@ -1591,83 +1646,144 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    // pantalla de inicio propia: a la derecha, siempre a mano
-                    Rectangle {
-                        width: sp-row.preferred-width;
-                        border-radius: 7px;
-                        background: sp-ta.has-hover ? Ui.p.raised : transparent;
-                        border-width: 1px;
-                        border-color: root.splash-name != "" ? Ui.p.accent.with-alpha(0.6) : Ui.p.frame;
-                        sp-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.choose-splash(); }
+                }
+
+                // pantalla de inicio: la de Adobe o una imagen propia, y cómo se coloca en 2024 y anteriores
+                if root.lib-tab == 2: Rectangle {
+                    opacity: root.lib-in ? 1 : 0;
+                    animate opacity { duration: root.lib-in ? 240ms : 0ms; easing: ease-out; }
+                    height: 72px;
+                    HorizontalLayout {
+                        y: 4px;
+                        height: 64px;
+                        spacing: 8px;
+                        // la de Adobe
+                        Rectangle {
+                            width: 128px;
+                            border-radius: 8px;
+                            background: sa-ta.has-hover ? Ui.p.raised : Ui.p.base;
+                            border-width: root.splash-name == "" ? 2px : 1px;
+                            border-color: root.splash-name == "" ? Ui.p.accent : Ui.p.frame;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 4px;
+                                alignment: center;
+                                Text { text: Ui.t("Adobe's", "La de Adobe"); color: Ui.p.text; font-size: 12px; font-weight: 600; }
+                                Text { text: Ui.t("Original artwork", "Ilustración original"); color: Ui.p.muted; font-size: 10.5px; }
+                            }
+                            sa-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.clear-splash(); }
+                            }
                         }
-                        sp-row := HorizontalLayout {
-                            // con la × el margen derecho es el mismo que arriba y abajo
-                            padding-left: 10px;
-                            padding-right: root.splash-name != "" ? 4px : 10px;
-                            spacing: 7px;
-                            if root.splash-name != "": VerticalLayout {
+                        // imagen propia: entera, con el punto de enfoque (clic o arrastre para moverlo)
+                        if root.splash-name == "": Rectangle {
+                            width: 128px;
+                            border-radius: 8px;
+                            background: su-ta.has-hover ? Ui.p.raised : Ui.p.base;
+                            border-width: 1px;
+                            border-color: Ui.p.frame;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 4px;
                                 alignment: center;
-                                Rectangle {
-                                    width: 26px;
-                                    height: 16px;
-                                    border-radius: 3px;
-                                    clip: true;
-                                    Image { width: 26px; height: 16px; source: root.splash-thumb; image-fit: cover; }
-                                }
+                                Text { text: Ui.t("Your image", "Tu imagen"); color: Ui.p.text; font-size: 12px; font-weight: 600; }
+                                Text { text: Ui.t("Choose a PNG or JPG…", "Elige un PNG o JPG…"); color: Ui.p.muted; font-size: 10.5px; }
                             }
-                            if root.splash-name == "": VerticalLayout {
-                                alignment: center;
-                                // icono de imagen
-                                Path {
-                                    width: 13px;
-                                    height: 11px;
-                                    viewbox-width: 13;
-                                    viewbox-height: 11;
-                                    stroke: Ui.p.muted;
-                                    stroke-width: 1.2px;
-                                    fill: transparent;
-                                    commands: "M 1 1 L 12 1 L 12 10 L 1 10 Z M 1.5 8.5 L 5 5 L 7.5 7.5 L 9 6 L 11.5 8.5";
-                                }
+                            su-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.choose-splash(); }
                             }
-                            Text {
-                                text: Ui.t("SPLASH", "INICIO") + " · " + (root.splash-name == "" ? Ui.t("ADOBE'S", "ADOBE") : Ui.t("YOURS", "TUYO"));
-                                color: root.splash-name == "" ? Ui.p.muted : Ui.p.text;
-                                font-family: "Archivo Expanded";
-                                font-size: 10px;
-                                font-weight: 800;
-                                letter-spacing: 1px;
-                                vertical-alignment: center;
+                        }
+                        if root.splash-name != "": Rectangle {
+                            width: max(72px, min(200px, 64px * root.splash-aspect));
+                            border-radius: 8px;
+                            clip: true;
+                            Image { width: parent.width; height: parent.height; source: root.splash-thumb; image-fit: fill; }
+                            // punto de enfoque
+                            Rectangle {
+                                x: parent.width * root.splash-fx - 7px;
+                                y: parent.height * root.splash-fy - 7px;
+                                width: 14px;
+                                height: 14px;
+                                border-radius: 7px;
+                                background: root.splash-auto ? #ffffff60 : Ui.p.accent;
+                                border-width: 2px;
+                                border-color: #ffffff;
+                                drop-shadow-blur: 4px;
+                                drop-shadow-color: #00000090;
                             }
-                            if root.splash-name != "": VerticalLayout {
-                                alignment: center;
-                                Rectangle {
-                                    width: 18px;
-                                    height: 18px;
-                                    border-radius: 5px;
-                                    background: cs-ta.has-hover ? Ui.p.frame : transparent;
-                                    // X dibujada: centrada de verdad (el carácter "×" queda desplazado)
-                                    Path {
-                                        width: 8px;
-                                        height: 8px;
-                                        viewbox-width: 8;
-                                        viewbox-height: 8;
-                                        stroke: cs-ta.has-hover ? Ui.p.text : Ui.p.muted;
-                                        stroke-width: 1.3px;
-                                        fill: transparent;
-                                        commands: "M 0.5 0.5 L 7.5 7.5 M 7.5 0.5 L 0.5 7.5";
+                            Rectangle {
+                                border-radius: 8px;
+                                border-width: 2px;
+                                border-color: Ui.p.accent;
+                            }
+                            TouchArea {
+                                mouse-cursor: crosshair;
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                                        root.set-splash-focus(self.mouse-x / self.width, self.mouse-y / self.height);
                                     }
-                                    cs-ta := TouchArea {
+                                }
+                                moved => {
+                                    if (self.pressed) {
+                                        root.set-splash-focus(max(0, min(1, self.mouse-x / self.width)), max(0, min(1, self.mouse-y / self.height)));
+                                    }
+                                }
+                            }
+                        }
+                        if root.splash-name != "": VerticalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            Text { text: Ui.t("Click the image to choose what shows", "Haz clic en la imagen para elegir qué se ve"); color: Ui.p.muted; font-size: 10.5px; width: 150px; wrap: word-wrap; }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+                                Rectangle {
+                                    width: chg-lbl.preferred-width + 20px;
+                                    height: 24px;
+                                    border-radius: 6px;
+                                    background: chg-ta.has-hover ? Ui.p.raised : transparent;
+                                    border-width: 1px;
+                                    border-color: Ui.p.frame;
+                                    chg-lbl := Text { text: Ui.t("Change…", "Cambiar…"); color: Ui.p.text; font-family: "Archivo Expanded"; font-size: 10px; font-weight: 800; }
+                                    chg-ta := TouchArea {
                                         mouse-cursor: pointer;
-                                        clicked => { root.clear-splash(); }
+                                        clicked => { root.choose-splash(); }
                                     }
+                                }
+                                Rectangle {
+                                    width: auto-lbl.preferred-width + 20px;
+                                    height: 24px;
+                                    border-radius: 6px;
+                                    background: root.splash-auto ? Ui.p.accent.with-alpha(0.18) : (auto-ta.has-hover ? Ui.p.raised : transparent);
+                                    border-width: 1px;
+                                    border-color: root.splash-auto ? Ui.p.accent : Ui.p.frame;
+                                    auto-lbl := Text { text: Ui.t("AUTO", "AUTO"); color: root.splash-auto ? Ui.p.text : Ui.p.muted; font-family: "Archivo Expanded"; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+                                    auto-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.auto-splash-focus(); }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        // cómo se coloca la imagen: fundida con el panel o en un recuadro
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            Text { text: Ui.t("How the image sits", "Cómo va la imagen"); color: Ui.p.muted; font-size: 10.5px; horizontal-alignment: right; }
+                            HorizontalLayout {
+                                alignment: end;
+                                Seg {
+                                    items: [Ui.t("FADE", "FUNDIDO"), Ui.t("FRAME", "RECUADRO")];
+                                    current: root.splash-frame ? 1 : 0;
+                                    picked(k) => { root.set-splash-frame(k == 1); }
                                 }
                             }
                         }
                     }
                 }
-
                 if root.lib-tab == 0: Rectangle {
                     // solo fundido: el renderizador por software no escala y, con transform-scale, la fila de
                     // "My themes" se dibujaba corrida (el primer tema quedaba fuera)

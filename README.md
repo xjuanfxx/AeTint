@@ -38,12 +38,12 @@
 ## Features
 
 - **One palette, everywhere.** Six colours — background, panels, frames, fields, text and accent — drive hundreds of Adobe greys. Each grey lands between your colours by lightness, so every in-between shade follows the palette.
-- **Dark and light.** Every theme has a **Dark** palette (AE's *Darkest* and *Dark*) and a **Light** palette (AE's *Light*). Switch brightness in AE and the menus and title bar follow live.
+- **Dark and light.** Every theme has a **Dark** palette (AE's *Darkest* and *Dark*) and a **Light** palette (AE's *Light*). Switch brightness in AE and the menus and title bar follow live. The light palette is for AE 2025 and newer; AE 2024 and older (which have a brightness slider instead) always get the dark one.
 - **Presets** with both versions: Catppuccin Mocha / Latte, Tokyo Night / Day, Rosé Pine / Dawn, Nord / Snow Storm, Gruvbox, Dracula, One Dark / One Light, Monokai, Solarized, GitHub, Everforest, Kanagawa, Ayu, Graphite, and AE's own colours. Scroll the strip with the mouse wheel or the ‹ › arrows.
 - **Colour picker with HSL**: a saturation/brightness square plus hue, saturation and lightness sliders, each with a box to type the exact value, and the hex code.
 - **My themes** — save your palettes (including hand-picked timeline colours) and switch with one click. **Export** one as a `.aetint` file to share it; whoever gets it double-clicks the file (or uses **Import…**) and it opens in AeTint.
-- **Your own splash screen** *(experimental)* — press **Splash** (next to the theme tabs), pick a PNG or JPG and **Apply theme** puts it on After Effects' start-up screen. Adobe's layout stays: your image takes the artwork side and the panel and logo follow your palette. It's written into the three splash sizes in place, so **Restore** undoes it like everything else.
-- **Timeline overrides** for the navigator, work area, playhead, selected layer and keyframe.
+- **Your own splash screen** *(experimental)* — in the **Splash** tab, pick a PNG or JPG (any resolution) and **Apply theme** puts it on After Effects' start-up screen. Choose **Fade** (the image fills the right side and blends into the panel) or **Frame** (a rounded box). AeTint frames the most detailed part of the image on its own, or click the image to choose what shows. The panel and logo follow your palette. It's written into the three splash sizes in place, so **Restore** undoes it like everything else.
+- **Timeline overrides** for the navigator and work area. The playhead and keyframes follow the accent colour, and the selected layer uses AE's label colours.
 - **Live preview** of After Effects inside the app, with smooth transitions when you switch between Dark and Light, presets or themes. The **Tint menu & title** switch sits on the preview's menu bar (on by default).
 - **Menus that actually match**: menu bar, dropdowns, multi-column menus like *Effect*, borders, separators, hover and the title bar.
 - **Safe by design**: originals are backed up and **Restore** puts them back. Nothing is written if a file doesn't look the way AeTint expects.
@@ -279,7 +279,7 @@ Press **Restore** in AeTint, or uninstall it from **Settings → Apps** with *Re
 
 - [ ] **Premiere Pro and Media Encoder** — they share `dvaui.dll` and Win32 menus with After Effects.
 - [ ] **Theme import from editors** — turn a VS Code or terminal colour scheme into an AeTint theme.
-- [ ] **Custom splash screen out of experimental** — more layouts and a live preview.
+- [ ] **Custom splash screen out of experimental** — a live preview of the result.
 - [ ] **Verify every version in a running copy** — 2020–2023 and 2025 are checked against their files; 2019 and earlier aren't supported yet.
 
 **Done**
@@ -288,7 +288,7 @@ Press **Restore** in AeTint, or uninstall it from **Settings → Apps** with *Re
 - [x] **After Effects 2020–2022** *(v0.4.0)*.
 - [x] **HSL colour picker, more presets and an optional watchdog** *(v0.4.0)*.
 - [x] **Export / import themes** — share a theme as a `.aetint` file and open it with a double-click *(v0.3.1)*.
-- [x] **Custom splash screen** *(experimental, v0.3.1)*.
+- [x] **Custom splash screen** *(experimental, v0.3.1)*; Splash tab with Fade/Frame and smart framing *(v0.4.3)*.
 
 Ideas and requests are welcome in [Issues](https://github.com/xjuanfxx/AeTint/issues).
 

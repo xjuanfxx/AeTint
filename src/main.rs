@@ -88,6 +88,7 @@ fn group_label(id: &str, en: &'static str) -> &'static str {
         "workarea" => t(en, "Área de trabajo"),
         "cti" => t(en, "Cabezal (CTI)"),
         "layersel" => t(en, "Capa activa"),
+        "keyframe" => t(en, "Keyframe"),
         _ => en,
     }
 }
@@ -366,12 +367,24 @@ fn register_theme_files() {
 }
 
 /// Miniatura de la imagen del splash para el botón.
-fn splash_thumb(cfg: &Config) -> slint::Image {
-    let Some(p) = cfg.splash.as_deref() else { return slint::Image::default() };
-    let Ok(img) = splash::load(std::path::Path::new(p)) else { return slint::Image::default() };
-    let t = img.thumbnail(104, 64).to_rgba8();
+/// Estado del splash en la interfaz: nombre, miniatura entera (sin recortar, para elegir el encuadre), su
+/// proporción y el punto de enfoque (el elegido o el que pondría AeTint).
+fn splash_ui(ui: &AppWindow, cfg: &Config) {
+    ui.set_splash_name(splash_label(cfg).into());
+    let img = cfg.splash.as_deref().and_then(|p| splash::load(std::path::Path::new(p)).ok());
+    let Some(img) = img else {
+        ui.set_splash_thumb(slint::Image::default());
+        return;
+    };
+    let t = img.thumbnail(480, 240).to_rgba8();
     let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(t.as_raw(), t.width(), t.height());
-    slint::Image::from_rgba8(buf)
+    ui.set_splash_thumb(slint::Image::from_rgba8(buf));
+    ui.set_splash_aspect(img.width() as f32 / img.height().max(1) as f32);
+    // el automático, para la proporción típica del hueco de la imagen (más o menos cuadrado)
+    let (fx, fy) = cfg.splash_focus.unwrap_or_else(|| splash::auto_focus(&img, 1.0));
+    ui.set_splash_fx(fx);
+    ui.set_splash_fy(fy);
+    ui.set_splash_auto(cfg.splash_focus.is_none());
 }
 
 fn splash_label(cfg: &Config) -> String {
@@ -443,10 +456,11 @@ fn refresh(ui: &AppWindow, app: &App) {
         nav: slint_color(get("time-ruler-abs-grad-start", pal.frame)),
         work: slint_color(get("time-ruler-work-area-grad-start", pal.frame)),
         work_edge: slint_color(get("time-ruler-work-area-top-edge", pal.text)),
-        cti: slint_color(get("time-ruler-cti-comp", [1.0, 0.0, 0.0])),
+        // AE pinta el playhead y los keyframes con el color de resaltado: el acento de la paleta
+        cti: slint_color(pal.accent),
         layer: slint_color(get("tl-layer-bar-norm-grad-start", pal.frame)),
         layer_sel: slint_color(get("tl-layer-bar-sel-grad-start", pal.frame)),
-        key_sel: slint_color(get("timelinegekeyframe-selected", [1.0, 0.93, 0.0])),
+        key_sel: slint_color(pal.accent),
     });
 
     let rows: Vec<ColorEntry> = PALETTE_ROWS
@@ -461,6 +475,7 @@ fn refresh(ui: &AppWindow, app: &App) {
                 value: slint_color(color::parse_hex(&hex).unwrap_or([0.0; 3])),
                 hex: hex.into(),
                 custom: true,
+                locked: false,
             }
         })
         .collect();
@@ -478,9 +493,27 @@ fn refresh(ui: &AppWindow, app: &App) {
                 hex: color::to_hex(c).into(),
                 value: slint_color(c),
                 custom,
+                locked: false,
             }
         })
         .collect();
+    // los que AE pinta por su cuenta: se muestran (con el color que sale de verdad) pero no se pueden cambiar
+    let mut tl = tl;
+    for (id, label, c) in [
+        ("cti", "Playhead (CTI)", pal.accent),
+        ("keyframe", "Keyframe", pal.accent),
+        ("layersel", "Selected layer", get("tl-layer-bar-sel-grad-start", pal.frame)),
+    ] {
+        tl.push(ColorEntry {
+            key: id.into(),
+            label: group_label(id, label).into(),
+            hint: "".into(),
+            hex: color::to_hex(c).into(),
+            value: slint_color(c),
+            custom: false,
+            locked: true,
+        });
+    }
     set_rows(ui.get_timeline(), tl, |m| ui.set_timeline(m));
 
     // las versiones más nuevas primero: con muchas instaladas la lista se desplaza y arriba quedan las de uso diario
@@ -992,6 +1025,16 @@ fn main() -> Result<(), slint::PlatformError> {
             changed();
         }
     });
+    ui.on_set_splash_frame({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move |on| {
+            app.borrow_mut().cfg.splash_frame = on;
+            install::save_config(&app.borrow().cfg);
+            if let Some(ui) = weak.upgrade() {
+                ui.set_splash_frame(on);
+            }
+        }
+    });
     ui.on_toggle_sounds({
         let (app, weak) = (app.clone(), ui.as_weak());
         move |on| {
@@ -1337,9 +1380,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 Ok(stored) => {
                     let mut a = app.borrow_mut();
                     a.cfg.splash = Some(stored);
+                    // imagen nueva: el encuadre vuelve a ser automático
+                    a.cfg.splash_focus = None;
                     install::save_config(&a.cfg);
-                    ui.set_splash_name(splash_label(&a.cfg).into());
-                    ui.set_splash_thumb(splash_thumb(&a.cfg));
+                    splash_ui(&ui, &a.cfg);
                     ui.set_status(t("Splash image set. Press Apply theme to put it in After Effects.", "Imagen de inicio elegida. Pulsa Aplicar tema para ponerla en After Effects.").into());
                     ui.set_status_error(false);
                     ui.set_status_ok(true);
@@ -1363,6 +1407,30 @@ fn main() -> Result<(), slint::PlatformError> {
                 ui.set_status(t("Adobe's splash again. Press Apply theme to put it back.", "Vuelve el splash de Adobe. Pulsa Aplicar tema para devolverlo.").into());
                 ui.set_status_error(false);
                 ui.set_status_ok(false);
+            }
+        }
+    });
+    ui.on_set_splash_focus({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move |x, y| {
+            let mut a = app.borrow_mut();
+            a.cfg.splash_focus = Some((x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)));
+            install::save_config(&a.cfg);
+            if let Some(ui) = weak.upgrade() {
+                ui.set_splash_fx(x.clamp(0.0, 1.0));
+                ui.set_splash_fy(y.clamp(0.0, 1.0));
+                ui.set_splash_auto(false);
+            }
+        }
+    });
+    ui.on_auto_splash_focus({
+        let (app, weak) = (app.clone(), ui.as_weak());
+        move || {
+            let mut a = app.borrow_mut();
+            a.cfg.splash_focus = None;
+            install::save_config(&a.cfg);
+            if let Some(ui) = weak.upgrade() {
+                splash_ui(&ui, &a.cfg);
             }
         }
     });
@@ -1390,14 +1458,14 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     ui.set_watcher(app.borrow().cfg.watcher);
     ui.set_autostart(menus::autostart_enabled());
-    ui.set_splash_name(splash_label(&app.borrow().cfg).into());
-    ui.set_splash_thumb(splash_thumb(&app.borrow().cfg));
+    splash_ui(&ui, &app.borrow().cfg);
     register_theme_files();
     // doble clic en un .aetint: AeTint se abre con ese archivo
     if let Some(p) = std::env::args().skip(1).find(|a| a.to_lowercase().ends_with(".aetint")) {
         import_file(&ui, &app, &*changed, std::path::Path::new(&p));
     }
     ui.set_sounds(app.borrow().cfg.sounds);
+    ui.set_splash_frame(app.borrow().cfg.splash_frame);
     if app.borrow().cfg.menus {
         let _ = menus::write_colors(&app.borrow().cfg.palette, &app.borrow().cfg.light, menus_on(&app.borrow().cfg));
         if app.borrow().cfg.watcher {

@@ -179,6 +179,14 @@ pub struct Config {
     /// Imagen propia para la pantalla de inicio de AE (copia guardada en %LOCALAPPDATA%\AeTint).
     #[serde(default)]
     pub splash: Option<String>,
+    /// Pantalla de inicio: la imagen en un recuadro redondeado (true; en 2024 y anteriores el de Adobe) o en todo
+    /// el lado derecho fundida con el panel (false, el modo normal).
+    #[serde(default)]
+    pub splash_frame: bool,
+    /// Punto de la imagen del splash que se quiere ver (0..1 en cada eje). None = lo elige AeTint (la zona con
+    /// más interés).
+    #[serde(default)]
+    pub splash_focus: Option<(f32, f32)>,
 }
 
 fn default_lang() -> String {
@@ -191,7 +199,7 @@ fn yes() -> bool {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: true, watcher: false, lang: default_lang(), sounds: true, splash: None }
+        Config { palette: Palette::default(), light: Palette::light_default(), overrides: BTreeMap::new(), selected: Vec::new(), menus: true, watcher: false, lang: default_lang(), sounds: true, splash: None, splash_frame: false, splash_focus: None }
     }
 }
 
@@ -569,7 +577,7 @@ pub fn probe(dir: &Path, cfg: &Config) {
                                     // AETINT_PROBE_SPLASH=<imagen>: prueba la pantalla de inicio y comprueba que cada PNG se lee
                                     if let Some(img) = std::env::var_os("AETINT_PROBE_SPLASH") {
                                         let res = crate::pe::Pe::parse(&a).map(|p| p.resources(&a)).unwrap_or_default();
-                                        match crate::splash::load(Path::new(&img)).and_then(|im| crate::splash::apply(&mut n, &res, &im, Some(&pal))) {
+                                        match crate::splash::load(Path::new(&img)).and_then(|im| crate::splash::apply(&mut n, &res, &im, Some(&pal), !cfg.splash_frame, cfg.splash_focus)) {
                                             Ok(k) => {
                                                 println!("  splash: {k} images written, size {} (same: {})", n.len(), n.len() == a.len());
                                                 for r in res.iter().filter(|r| crate::splash::NAMES.iter().any(|nm| r.is("PNG", nm))) {
@@ -601,6 +609,9 @@ pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u
     let lpal = cfg.light.resolve()?;
     let oa = original(t, FileKind::AeLib, st)?;
     let a = AeLib::open(&oa)?;
+    // AE 2024 y anteriores (temas XML, deslizador de brillo): no hay Darkest / Dark / Light que seguir, y la mitad
+    // clara del deslizador con la paleta clara quedaba rota; las dos mitades llevan la paleta oscura
+    let lpal = if a.xml.is_empty() { lpal } else { pal };
     // AE 2020 17.0: su dvaui.dll no trae tabla de colores (solo iconos); todo el color está en los temas XML
     // de AfterFXLib, que se recolorean solo con la paleta. Ese dvaui.dll no se toca (ni hace falta su copia).
     let tokenless = a.xml_only() && fs::read(t.file(FileKind::Dvaui)).is_ok_and(|b| Dvaui::open(&b).is_err());
@@ -643,7 +654,7 @@ pub fn build(t: &Target, cfg: &Config, st: &State) -> Result<Vec<(PathBuf, Vec<u
     if let Some(sp) = cfg.splash.as_deref().filter(|p| Path::new(p).is_file()) {
         let img = crate::splash::load(Path::new(sp))?;
         let res = crate::pe::Pe::parse(&oa)?.resources(&oa);
-        crate::splash::apply(&mut na, &res, &img, Some(&pal))?;
+        crate::splash::apply(&mut na, &res, &img, Some(&pal), !cfg.splash_frame, cfg.splash_focus)?;
         crate::pe::fix_checksum(&mut na);
     }
     let mut out = Vec::new();
